@@ -108,9 +108,6 @@ export const PasswordLogin: React.FC<PasswordLoginProps> = ({ onSuccess, savedLo
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Varsayılan sistem şifresi: <strong className="text-slate-700">iska2026</strong>
-              </p>
             </div>
 
             <div className="flex items-center justify-between text-xs">
