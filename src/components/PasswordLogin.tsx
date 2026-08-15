@@ -109,7 +109,6 @@ export const PasswordLogin: React.FC<PasswordLoginProps> = ({ onSuccess, savedLo
                 </button>
               </div>
             </div>
-
             <div className="flex items-center justify-between text-xs">
               <label className="flex items-center gap-2 text-slate-600 font-medium cursor-pointer">
                 <input
