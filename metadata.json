@@ -1,0 +1,6 @@
+{
+  "name": "Bina Risk Tespiti Teklif Hazırlayıcı",
+  "description": "Riskli yapı tespiti, orta katlı yapı tespiti, deprem performans raporu ve statik güçlendirme projeleri için hızlı, mobil uyumlu ve PDF destekli teklif oluşturma platformu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

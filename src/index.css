@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Hide header, navigation, main background forms, footer, buttons */
+  header,
+  nav,
+  main,
+  footer,
+  button,
+  form,
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+
+  /* Reset modal overlay and scroll wrappers so they don't clip or create blank pages */
+  .fixed,
+  .overflow-y-auto,
+  [role="dialog"] {
+    position: static !important;
+    inset: auto !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+  }
+
+  /* Target the printable document */
+  .printable-document {
+    display: block !important;
+    position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  .printable-document * {
+    box-shadow: none !important;
+  }
+}
+

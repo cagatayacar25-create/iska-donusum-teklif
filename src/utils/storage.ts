@@ -1,0 +1,358 @@
+import { Proposal, CompanyProfile, ProposalType } from '../types';
+import { DEFAULT_COMPANY_PROFILE, DEFAULT_SCOPES, DEFAULT_GUCLENDIRME_PARAMS } from '../data/defaultTemplates';
+
+const PROPOSALS_KEY = 'bina_teklif_proposals_v1';
+const COMPANY_KEY = 'bina_teklif_company_v1';
+
+export function getCompanyProfile(): CompanyProfile {
+  try {
+    const saved = localStorage.getItem(COMPANY_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        ...DEFAULT_COMPANY_PROFILE,
+        ...parsed,
+        logoUrl: parsed.logoUrl || DEFAULT_COMPANY_PROFILE.logoUrl,
+      };
+    }
+  } catch (e) {
+    console.error('Error loading company profile:', e);
+  }
+  return DEFAULT_COMPANY_PROFILE;
+}
+
+export function saveCompanyProfile(profile: CompanyProfile): void {
+  try {
+    localStorage.setItem(COMPANY_KEY, JSON.stringify(profile));
+  } catch (e) {
+    console.error('Error saving company profile:', e);
+  }
+}
+
+export function getProposals(): Proposal[] {
+  try {
+    const saved = localStorage.getItem(PROPOSALS_KEY);
+    if (saved) {
+      const parsed: Proposal[] = JSON.parse(saved);
+      // Clean up and ensure Istanbul proposals have valid districts/neighborhoods
+      let modified = false;
+      const cleaned = parsed.map((p) => {
+        if (!p.property) return p;
+        if (p.property.city?.toLowerCase().includes('istanbul')) {
+          let dist = p.property.district;
+          if (dist === 'Karaköy / Beyoğlu') {
+            dist = 'Beyoğlu';
+            modified = true;
+          }
+          if (!dist) {
+            dist = 'Kadıköy';
+            modified = true;
+          }
+          return {
+            ...p,
+            property: {
+              ...p.property,
+              city: 'İstanbul',
+              district: dist,
+              neighborhood: p.property.neighborhood || 'Göztepe Mah.',
+            },
+          };
+        }
+        return p;
+      });
+      if (modified) {
+        saveProposals(cleaned);
+      }
+      return cleaned;
+    }
+  } catch (e) {
+    console.error('Error loading proposals:', e);
+  }
+  // If empty, initialize with mock proposals for a great first-time demo
+  const initial = getInitialMockProposals();
+  saveProposals(initial);
+  return initial;
+}
+
+export function saveProposals(proposals: Proposal[]): void {
+  try {
+    localStorage.setItem(PROPOSALS_KEY, JSON.stringify(proposals));
+  } catch (e) {
+    console.error('Error saving proposals:', e);
+  }
+}
+
+export function saveProposal(proposal: Proposal): void {
+  const proposals = getProposals();
+  const existingIndex = proposals.findIndex((p) => p.id === proposal.id);
+  const updatedProposal = {
+    ...proposal,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (existingIndex >= 0) {
+    proposals[existingIndex] = updatedProposal;
+  } else {
+    proposals.unshift(updatedProposal);
+  }
+  saveProposals(proposals);
+}
+
+export function deleteProposal(id: string): void {
+  const proposals = getProposals().filter((p) => p.id !== id);
+  saveProposals(proposals);
+}
+
+export function duplicateProposal(id: string): Proposal | null {
+  const proposals = getProposals();
+  const target = proposals.find((p) => p.id === id);
+  if (!target) return null;
+
+  const newRevisionNumber = (target.revisionNumber || 1) + 1;
+  const now = new Date();
+  const year = now.getFullYear();
+  const randomSuffix = Math.floor(100 + Math.random() * 900);
+
+  const copy: Proposal = {
+    ...JSON.parse(JSON.stringify(target)),
+    id: 'prop_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+    proposalNumber: `${target.proposalNumber}-R${newRevisionNumber}`,
+    title: `${target.title} (Revizyon ${newRevisionNumber})`,
+    status: 'revize',
+    revisionNumber: newRevisionNumber,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+
+  saveProposal(copy);
+  return copy;
+}
+
+export function generateNewProposalNumber(): string {
+  const proposals = getProposals();
+  const year = new Date().getFullYear();
+  const count = proposals.length + 1;
+  const numFormatted = String(count).padStart(3, '0');
+  return `TKL-${year}-${numFormatted}`;
+}
+
+export function createEmptyProposal(type: ProposalType): Proposal {
+  const now = new Date().toISOString();
+  const isGuclendirme = type === 'statik_guclendirme';
+  const isPerformans = type === 'performans_raporu';
+  const isOrtaKatli = type === 'orta_katli_risk';
+  const defaultFloors = isOrtaKatli ? 10 : (isGuclendirme ? 4 : 6);
+  const defaultUnitPrice = (isOrtaKatli || isPerformans) ? 30000 : (isGuclendirme ? 600000 : 45000);
+  const defaultPricingMethod = (isOrtaKatli || isPerformans) ? 'kat_basi' : 'toplam_sabit';
+  const subtotal = isGuclendirme 
+    ? DEFAULT_GUCLENDIRME_PARAMS.stage1Total 
+    : (defaultPricingMethod === 'kat_basi' ? defaultUnitPrice * defaultFloors : defaultUnitPrice);
+  const vatRate = 20;
+  const totalAmount = Math.round(subtotal * (1 + vatRate / 100));
+
+  return {
+    id: 'prop_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+    proposalNumber: generateNewProposalNumber(),
+    type,
+    title: type === 'riskli_yapi' 
+      ? 'Riskli Yapı Tespiti Teklifi' 
+      : type === 'orta_katli_risk' 
+      ? 'Orta Katlı Bina Risk İnceleme Teklifi' 
+      : type === 'statik_guclendirme'
+      ? 'Statik Güçlendirme Avan ve Detay Projeleri Teklifi'
+      : 'Bina Deprem Performans Raporu Teklifi',
+    status: 'taslak',
+    createdAt: now,
+    updatedAt: now,
+    client: {
+      name: isGuclendirme ? 'Kopuzlar San.A.Ş.' : 'Yılmaz Apartmanı Yönetimi',
+      contactPerson: isGuclendirme ? 'Fabrika / Tesis Yönetimi' : 'Ahmet Yılmaz (Yönetici)',
+      phone: '0533 123 45 67',
+      email: isGuclendirme ? 'info@kopuzlar.com' : 'ahmet.yilmaz@gmail.com',
+      notes: isGuclendirme ? '2018 TBDY kapsamında Avan ve Detay Güçlendirme Projesi' : 'Bina sakinleri karot alımı konusunda bilgilendirildi.',
+    },
+    property: {
+      city: 'İstanbul',
+      district: isGuclendirme ? 'Ümraniye' : 'Kadıköy',
+      neighborhood: isGuclendirme ? 'Dudullu OSB' : 'Göztepe Mah.',
+      fullAddress: isGuclendirme ? 'Dudullu Organize Sanayi Bölgesi, Ümraniye / İstanbul' : 'Tütüncü Mehmet Efendi Cad. No: 48, Kadıköy / İstanbul',
+      ada: '6436',
+      parsel: '1',
+      buildingCount: isGuclendirme ? 2 : 1,
+      totalArea: isGuclendirme ? 4500 : undefined,
+      totalFloors: defaultFloors,
+      buildingType: 'Betonarme',
+      usagePurpose: isGuclendirme ? 'İşyeri' : 'Konut',
+      hasAsBuiltProject: 'Hayır yok (Röleve Alınacak)',
+    },
+    scopeItems: JSON.parse(JSON.stringify(DEFAULT_SCOPES[type])),
+    pricing: {
+      unitPrice: defaultUnitPrice,
+      pricingMethod: defaultPricingMethod,
+      subtotal,
+      vatRate,
+      discount: 0,
+      totalAmount,
+      currency: 'TL',
+    },
+    paymentTerms: {
+      advanceRatio: 50,
+      uponDeliveryRatio: 50,
+      completionWorkDays: isGuclendirme ? 20 : 7,
+      validityDays: 15,
+      customNotes: isGuclendirme 
+        ? 'İş başlangıcında %50, Avan proje tesliminde %50 olarak ödenecektir.'
+        : 'Saha incelemesi esnasında elektrik ve su imkanı sağlanmalıdır.',
+    },
+    revisionNumber: 1,
+    guclendirme: isGuclendirme ? JSON.parse(JSON.stringify(DEFAULT_GUCLENDIRME_PARAMS)) : undefined,
+  };
+}
+
+function getInitialMockProposals(): Proposal[] {
+  const now = new Date();
+  const date1 = new Date(now.getTime() - 86400000 * 1).toISOString();
+  const date2 = new Date(now.getTime() - 86400000 * 3).toISOString();
+  const date3 = new Date(now.getTime() - 86400000 * 6).toISOString();
+
+  return [
+    {
+      id: 'demo_prop_1',
+      proposalNumber: 'TKL-2026-001',
+      type: 'riskli_yapi',
+      title: 'Huzur Apartmanı Riskli Yapı Tespiti',
+      status: 'teklif_verildi',
+      createdAt: date1,
+      updatedAt: date1,
+      client: {
+        name: 'Huzur Apt. Kat Malikleri',
+        contactPerson: 'Mehmet Demir',
+        phone: '0532 987 65 43',
+        email: 'huzurapt.yonetim@gmail.com',
+        notes: '6306 sayılı kanun kapsamında kentsel dönüşüm başvurusu yapılacak.',
+      },
+      property: {
+        city: 'İstanbul',
+        district: 'Beyoğlu',
+        neighborhood: 'Cihangir Mah.',
+        fullAddress: 'Mumhane Cad. No: 18, Beyoğlu / İstanbul',
+        ada: '412',
+        parsel: '8',
+        totalFloors: 5,
+        buildingType: 'Betonarme',
+        usagePurpose: 'Karma',
+        hasAsBuiltProject: 'Hayır yok (Röleve Alınacak)',
+      },
+      scopeItems: DEFAULT_SCOPES.riskli_yapi,
+      pricing: {
+        unitPrice: 38000,
+        pricingMethod: 'toplam_sabit',
+        subtotal: 38000,
+        vatRate: 20,
+        discount: 3000,
+        totalAmount: 42000,
+        currency: 'TL',
+      },
+      paymentTerms: {
+        advanceRatio: 50,
+        uponDeliveryRatio: 50,
+        completionWorkDays: 5,
+        validityDays: 15,
+        customNotes: 'Laboratuvar sonuçları Çevre ve Şehircilik Bakanlığı sistemine işlenecektir.',
+      },
+      revisionNumber: 1,
+    },
+    {
+      id: 'demo_prop_2',
+      proposalNumber: 'TKL-2026-002',
+      type: 'performans_raporu',
+      title: 'Ege Plaza Deprem Performans Analizi',
+      status: 'onaylandi',
+      createdAt: date2,
+      updatedAt: date2,
+      client: {
+        name: 'Ege Gayrimenkul A.Ş.',
+        contactPerson: 'Selin Arslan',
+        phone: '0212 444 01 23',
+        email: 'selin.arslan@egegayrimenkul.com',
+        notes: 'Banka kredi ve sigorta işlemleri için performans raporu istendi.',
+      },
+      property: {
+        city: 'İstanbul',
+        district: 'Kadıköy',
+        neighborhood: 'Göztepe Mah.',
+        fullAddress: 'Bağdat Cad. No: 142, Kadıköy / İstanbul',
+        ada: '2045',
+        parsel: '12',
+        totalFloors: 8,
+        buildingType: 'Betonarme',
+        usagePurpose: 'İşyeri',
+        hasAsBuiltProject: 'Evet var',
+      },
+      scopeItems: DEFAULT_SCOPES.performans_raporu,
+      pricing: {
+        unitPrice: 30000,
+        pricingMethod: 'kat_basi',
+        subtotal: 240000,
+        vatRate: 20,
+        discount: 10000,
+        totalAmount: 276000,
+        currency: 'TL',
+      },
+      paymentTerms: {
+        advanceRatio: 40,
+        uponDeliveryRatio: 60,
+        completionWorkDays: 10,
+        validityDays: 30,
+        customNotes: 'Gerekli statik projeler idareden temin edilip tarafımıza iletilmiştir.',
+      },
+      revisionNumber: 1,
+    },
+    {
+      id: 'demo_prop_3',
+      proposalNumber: 'TKL-2026-003',
+      type: 'orta_katli_risk',
+      title: 'Marmara İş Merkezi Orta Katlı Risk İncelemesi',
+      status: 'taslak',
+      createdAt: date3,
+      updatedAt: date3,
+      client: {
+        name: 'Marmara İş Merkezi Site Yönetimi',
+        contactPerson: 'Caner Kaya',
+        phone: '0533 555 12 34',
+        email: 'caner.kaya@marmarais.com',
+        notes: '12 katlı iş merkezi için hızlı risk değerlendirmesi talep edildi.',
+      },
+      property: {
+        city: 'İstanbul',
+        district: 'Şişli',
+        neighborhood: 'Mecidiyeköy Mah.',
+        fullAddress: 'Büyükdere Cad. No: 75, Şişli / İstanbul',
+        ada: '1088',
+        parsel: '24',
+        totalFloors: 12,
+        buildingType: 'Betonarme',
+        usagePurpose: 'İşyeri',
+        hasAsBuiltProject: 'Evet var',
+      },
+      scopeItems: DEFAULT_SCOPES.orta_katli_risk,
+      pricing: {
+        unitPrice: 28000,
+        pricingMethod: 'kat_basi',
+        subtotal: 336000,
+        vatRate: 20,
+        discount: 16000,
+        totalAmount: 384000,
+        currency: 'TL',
+      },
+      paymentTerms: {
+        advanceRatio: 50,
+        uponDeliveryRatio: 50,
+        completionWorkDays: 8,
+        validityDays: 15,
+        customNotes: 'İncelemeler mesai saatleri dışında gerçekleştirilecektir.',
+      },
+      revisionNumber: 1,
+    },
+  ];
+}
