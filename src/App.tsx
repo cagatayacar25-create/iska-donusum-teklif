@@ -25,6 +25,7 @@ import {
   subscribeProposalsFromCloud, 
   fetchCompanyProfileFromCloud, 
   fetchProposalsFromCloud,
+  mergeProposals,
   syncSaveProposalToCloud, 
   syncSaveCompanyProfileToCloud 
 } from './firebase';
@@ -74,17 +75,18 @@ export default function App() {
       }
     });
 
-    // Realtime Listener for Proposals from Firestore Cloud
+    // Realtime Listener for Proposals from Firestore Cloud with Smart Merge
     const unsubscribe = subscribeProposalsFromCloud((cloudList) => {
-      if (cloudList && cloudList.length > 0) {
-        setProposals(cloudList);
-        localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(cloudList));
+      const localList = getProposals();
+      const merged = mergeProposals(localList, cloudList || []);
+      if (merged.length > 0) {
+        setProposals(merged);
+        localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(merged));
         setIsCloudSynced(true);
-      } else {
-        // If cloud is initially empty, seed cloud with local proposals
-        const localList = getProposals();
-        if (localList.length > 0) {
-          localList.forEach((p) => {
+        
+        // Background sync any local proposals to cloud if cloud is missing them
+        if (cloudList && cloudList.length < merged.length) {
+          merged.forEach((p) => {
             syncSaveProposalToCloud(p).catch(() => {});
           });
         }
@@ -278,37 +280,35 @@ export default function App() {
   // Manual Cloud Refresh & Two-Way Sync
   const handleRefreshCloud = async () => {
     try {
-      // 1. Upload any local proposals to Firestore first
       const localList = getProposals();
-      if (localList.length > 0) {
-        await Promise.all(localList.map((p) => syncSaveProposalToCloud(p)));
-      }
-
-      // 2. Fetch all latest proposals from Firestore
       const [cloudList, cloudProfile] = await Promise.all([
         fetchProposalsFromCloud(),
         fetchCompanyProfileFromCloud(),
       ]);
 
-      let count = 0;
-      if (cloudList && cloudList.length > 0) {
-        setProposals(cloudList);
-        localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(cloudList));
-        count = cloudList.length;
-      } else if (localList.length > 0) {
-        count = localList.length;
-      }
+      const merged = mergeProposals(localList, cloudList || []);
 
+      // 1. Save merged state to local storage & state
+      setProposals(merged);
+      localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(merged));
+
+      // 2. Upload all proposals to Firestore to ensure full synchronization
+      await Promise.all(merged.map((p) => syncSaveProposalToCloud(p)));
+
+      // 3. Sync Company profile
       if (cloudProfile && cloudProfile.name) {
         setCompanyProfile(cloudProfile);
         localStorage.setItem('bina_teklif_company_v1', JSON.stringify(cloudProfile));
+      } else {
+        const localProf = getCompanyProfile();
+        await syncSaveCompanyProfileToCloud(localProf);
       }
 
       setIsCloudSynced(true);
-      alert(`✅ Bulut Senkronizasyonu Başarılı!\n\nFirestore bulut veritabanı ile bağlantı kuruldu.\nToplam ${count} adet teklif tüm cihazlarınızla senkronize edildi.`);
+      alert(`✅ Bulut Senkronizasyonu Başarılı!\n\nFirestore bulut veritabanı ile çift yönlü eşitleme yapıldı.\nToplam ${merged.length} adet teklif tüm cihazlarınızla senkronize edildi.`);
     } catch (e: any) {
       console.warn('Manual cloud refresh error:', e);
-      alert(`⚠️ Bulut Bağlantı Uyarısı:\n\n${e?.message || 'Bulut veritabanına bağlanırken bir sorun oluştu.'}\nLütfen firebase-applet-config.json dosyasının GitHub ve projenizde yüklü olduğundan emin olun.`);
+      alert(`⚠️ Bulut Bağlantı Uyarısı:\n\n${e?.message || 'Bulut veritabanına bağlanırken bir sorun oluştu.'}\nLütfen firebase-applet-config.json dosyasının GitHub projenizde olduğundan emin olun.`);
     }
   };
 

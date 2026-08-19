@@ -35,6 +35,11 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
+// Helper to sanitize payload for Firestore (removes any undefined properties)
+function cleanForFirestore<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
+
 // Error handling helper
 enum OperationType {
   CREATE = 'create',
@@ -55,21 +60,26 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 // Proposals Database Helpers
-export async function syncSaveProposalToCloud(proposal: Proposal): Promise<void> {
+export async function syncSaveProposalToCloud(proposal: Proposal): Promise<boolean> {
   try {
     const docRef = doc(db, 'proposals', proposal.id);
-    await setDoc(docRef, proposal, { merge: true });
+    const cleanData = cleanForFirestore(proposal);
+    await setDoc(docRef, cleanData, { merge: true });
+    return true;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `proposals/${proposal.id}`);
+    return false;
   }
 }
 
-export async function syncDeleteProposalFromCloud(id: string): Promise<void> {
+export async function syncDeleteProposalFromCloud(id: string): Promise<boolean> {
   try {
     const docRef = doc(db, 'proposals', id);
     await deleteDoc(docRef);
+    return true;
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `proposals/${id}`);
+    return false;
   }
 }
 
@@ -111,13 +121,48 @@ export function subscribeProposalsFromCloud(callback: (proposals: Proposal[]) =>
   }
 }
 
+// Merge local and cloud proposals without losing any records
+export function mergeProposals(localList: Proposal[], cloudList: Proposal[]): Proposal[] {
+  const map = new Map<string, Proposal>();
+
+  // Add all local proposals
+  localList.forEach((p) => {
+    if (p && p.id) {
+      map.set(p.id, p);
+    }
+  });
+
+  // Merge cloud proposals (taking whichever has newer updatedAt/createdAt)
+  cloudList.forEach((p) => {
+    if (p && p.id) {
+      const existing = map.get(p.id);
+      if (!existing) {
+        map.set(p.id, p);
+      } else {
+        const localTime = new Date(existing.updatedAt || existing.createdAt).getTime();
+        const cloudTime = new Date(p.updatedAt || p.createdAt).getTime();
+        if (cloudTime >= localTime) {
+          map.set(p.id, p);
+        }
+      }
+    }
+  });
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
+
 // Company Profile Database Helpers
-export async function syncSaveCompanyProfileToCloud(profile: CompanyProfile): Promise<void> {
+export async function syncSaveCompanyProfileToCloud(profile: CompanyProfile): Promise<boolean> {
   try {
     const docRef = doc(db, 'settings', 'companyProfile');
-    await setDoc(docRef, profile, { merge: true });
+    const cleanData = cleanForFirestore(profile);
+    await setDoc(docRef, cleanData, { merge: true });
+    return true;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'settings/companyProfile');
+    return false;
   }
 }
 
