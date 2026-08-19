@@ -14,7 +14,8 @@ import {
   Lock,
   FileSpreadsheet,
   Cloud,
-  CloudCheck
+  CloudCheck,
+  RefreshCw
 } from 'lucide-react';
 import { ISKA_LOGO_DATA_URL } from '../assets/iskaLogo';
 
@@ -31,6 +32,7 @@ interface HeaderProps {
   onImportData: () => void;
   onExportExcel?: () => void;
   isCloudSynced?: boolean;
+  onRefreshCloud?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,8 +48,18 @@ export const Header: React.FC<HeaderProps> = ({
   onImportData,
   onExportExcel,
   isCloudSynced = true,
+  onRefreshCloud,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
+
+  const handleManualRefresh = () => {
+    if (onRefreshCloud) {
+      setIsRefreshing(true);
+      onRefreshCloud();
+      setTimeout(() => setIsRefreshing(false), 800);
+    }
+  };
 
   return (
     <header className="bg-slate-900 text-white shadow-lg sticky top-0 z-30 border-b border-slate-800">
@@ -122,6 +134,20 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
+            {/* Cloud Status / Sync Action Button (Always Visible on Desktop) */}
+            <button 
+              onClick={handleManualRefresh}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border shadow-sm transition cursor-pointer hover:scale-105 active:scale-95 ${
+                isCloudSynced 
+                  ? 'bg-emerald-950/70 border-emerald-500 text-emerald-300 hover:bg-emerald-900' 
+                  : 'bg-amber-950/70 border-amber-500 text-amber-300 hover:bg-amber-900'
+              }`}
+              title="Tüm cihazlarla anlık eşitlemek için tıklayın"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-amber-300' : isCloudSynced ? 'text-emerald-400' : 'text-amber-400 animate-pulse'}`} />
+              <span>{isRefreshing ? 'Eşitleniyor...' : isCloudSynced ? 'Bulut Eşitle' : 'Buluta Bağlan'}</span>
+            </button>
+
             <button
               onClick={() => setActiveTab('settings')}
               className={`p-2 rounded-lg transition ${
@@ -133,19 +159,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Settings className="w-5 h-5" />
             </button>
-
-            {/* Cloud Status Indicator */}
-            <div 
-              className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                isCloudSynced 
-                  ? 'bg-emerald-950/50 border-emerald-800/60 text-emerald-300' 
-                  : 'bg-amber-950/50 border-amber-800/60 text-amber-300'
-              }`}
-              title={isCloudSynced ? 'Firebase Firestore Bulut Veritabanı Aktif ve Senkronize' : 'Bulut Veritabanına Bağlanıyor...'}
-            >
-              <Cloud className={`w-3.5 h-3.5 ${isCloudSynced ? 'text-emerald-400' : 'text-amber-400 animate-pulse'}`} />
-              <span>{isCloudSynced ? 'Bulut Aktif' : 'Bulut Beklemede'}</span>
-            </div>
 
             <div className="h-5 w-px bg-slate-800 my-auto mx-1" />
 
@@ -186,8 +199,22 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Mobile menu trigger */}
+          {/* Mobile Top Bar (Phones & Small Tablets) */}
           <div className="flex items-center gap-2 md:hidden">
+            {/* Mobile Cloud Sync Button (Always on Phone Topbar) */}
+            <button
+              onClick={handleManualRefresh}
+              className={`p-2 rounded-lg border text-xs font-semibold flex items-center gap-1 transition ${
+                isCloudSynced
+                  ? 'bg-emerald-950/70 border-emerald-600 text-emerald-300'
+                  : 'bg-amber-950/70 border-amber-600 text-amber-300'
+              }`}
+              title="Bulut Verilerini Eşitle"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-amber-300' : 'text-emerald-400'}`} />
+              <span className="text-[11px] font-bold">Bulut</span>
+            </button>
+
             <button
               onClick={onNewProposal}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow transition flex items-center gap-1"
@@ -274,6 +301,19 @@ export const Header: React.FC<HeaderProps> = ({
             <Settings className="w-4 h-4" />
             Firma & Başlık Ayarları
           </button>
+
+          {onRefreshCloud && (
+            <button
+              onClick={() => {
+                handleManualRefresh();
+                setMobileMenuOpen(false);
+              }}
+              className="w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-emerald-300 hover:bg-slate-800 flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4 text-emerald-400" />
+              Bulut Verilerini Senkronize Et
+            </button>
+          )}
 
           <div className="pt-2 border-t border-slate-800 flex items-center justify-around text-xs text-slate-400">
             {onExportExcel && (
