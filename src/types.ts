@@ -2,6 +2,24 @@ export type ProposalType = 'riskli_yapi' | 'orta_katli_risk' | 'performans_rapor
 
 export type ProposalStatus = 'taslak' | 'teklif_verildi' | 'onaylandi' | 'revize' | 'iptal';
 
+export type PaymentStatus = 
+  | 'odeme_bekliyor'            // Ödeme Bekliyor (Henüz tahsilat yapılmadı)
+  | 'ilk_taksit_odendi'          // 1. Taksit / Peşinat Ödendi
+  | 'ara_odeme_odendi'           // Ara Ödeme / 2. Taksit Ödendi
+  | 'dosya_bitti_odeme_bekliyor' // Dosya Bitti, Kalan Ödeme Bekliyor
+  | 'tamami_odendi';             // Tamamı Ödendi (Tahsilat Tamamlandı)
+
+export interface PaymentInstallment {
+  id: string;
+  name: string; // e.g. "1. Taksit (Peşinat)", "2. Taksit (Saha Sonu)", "Kalan Bakiye (Rapor Teslimi)"
+  percentage?: number; // e.g. 50 (%)
+  amount: number; // TL
+  isPaid: boolean;
+  paidAt?: string; // ISO date string or YYYY-MM-DD
+  paymentMethod?: 'havale_eft' | 'nakit' | 'kredi_karti' | 'cek' | 'diger';
+  notes?: string;
+}
+
 export interface ScopeItem {
   id: string;
   title: string;
@@ -100,10 +118,14 @@ export interface PricingInfo {
   unitPrice: number;
   pricingMethod: 'toplam_sabit' | 'kat_basi';
   subtotal: number;
-  vatRate: number; // e.g. 20 or 10
+  vatRate: number; // e.g. 20, 10, or 0
   discount: number;
   totalAmount: number;
   currency: string;
+  kollukKuvvetiIncluded?: boolean;
+  kollukKuvvetiPrice?: number;
+  isWithoutVat?: boolean; // Faturasız işlem (KDV uygulanmaz)
+  invoiceType?: 'faturali' | 'faturasiz'; // Fatura seçeneği
 }
 
 export interface PaymentTerms {
@@ -112,6 +134,12 @@ export interface PaymentTerms {
   completionWorkDays: number; // e.g. 7
   validityDays: number; // e.g. 15
   customNotes: string;
+  paymentStatus?: PaymentStatus;
+  installments?: PaymentInstallment[];
+  totalPaidAmount?: number; // Alınan toplam ödeme tutarı (TL)
+  remainingAmount?: number; // Kalan tahsilat (TL)
+  paymentNotes?: string;
+  fileCompleted?: boolean; // Dosya / Rapor tamamlandı mı?
 }
 
 export interface Proposal {

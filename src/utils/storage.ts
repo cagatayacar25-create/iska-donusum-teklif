@@ -1,5 +1,10 @@
-import { Proposal, CompanyProfile, ProposalType } from '../types';
+import { Proposal, CompanyProfile, ProposalType, PaymentStatus, PaymentInstallment } from '../types';
 import { DEFAULT_COMPANY_PROFILE, DEFAULT_SCOPES, DEFAULT_GUCLENDIRME_PARAMS } from '../data/defaultTemplates';
+import { 
+  syncSaveProposalToCloud, 
+  syncDeleteProposalFromCloud, 
+  syncSaveCompanyProfileToCloud 
+} from '../firebase';
 
 const PROPOSALS_KEY = 'bina_teklif_proposals_v1';
 const COMPANY_KEY = 'bina_teklif_company_v1';
@@ -24,6 +29,10 @@ export function getCompanyProfile(): CompanyProfile {
 export function saveCompanyProfile(profile: CompanyProfile): void {
   try {
     localStorage.setItem(COMPANY_KEY, JSON.stringify(profile));
+    // Asynchronously sync to Firebase Firestore
+    syncSaveCompanyProfileToCloud(profile).catch((err) => {
+      console.warn('Could not sync company profile to cloud:', err);
+    });
   } catch (e) {
     console.error('Error saving company profile:', e);
   }
@@ -96,11 +105,21 @@ export function saveProposal(proposal: Proposal): void {
     proposals.unshift(updatedProposal);
   }
   saveProposals(proposals);
+
+  // Asynchronously sync to Firebase Firestore
+  syncSaveProposalToCloud(updatedProposal).catch((err) => {
+    console.warn('Could not sync proposal to cloud:', err);
+  });
 }
 
 export function deleteProposal(id: string): void {
   const proposals = getProposals().filter((p) => p.id !== id);
   saveProposals(proposals);
+
+  // Asynchronously remove from Firebase Firestore
+  syncDeleteProposalFromCloud(id).catch((err) => {
+    console.warn('Could not delete proposal from cloud:', err);
+  });
 }
 
 export function duplicateProposal(id: string): Proposal | null {
@@ -136,6 +155,94 @@ export function generateNewProposalNumber(): string {
   return `TKL-${year}-${numFormatted}`;
 }
 
+export function getProposalPaymentSummary(proposal: Proposal): {
+  grandTotal: number;
+  totalPaid: number;
+  remaining: number;
+  paymentStatus: PaymentStatus;
+  percentagePaid: number;
+  fileCompleted: boolean;
+} {
+  const isWithoutVat = Boolean(
+    proposal.pricing?.isWithoutVat || 
+    proposal.pricing?.invoiceType === 'faturasiz' || 
+    proposal.pricing?.vatRate === 0
+  );
+  
+  const subtotal = Number(proposal.pricing?.subtotal) || 0;
+  const discount = Number(proposal.pricing?.discount) || 0;
+  const base = Math.max(0, subtotal - discount);
+  const vatRate = isWithoutVat ? 0 : (Number(proposal.pricing?.vatRate) || 20);
+  const grandTotal = isWithoutVat ? base : Math.round(base * (1 + vatRate / 100));
+
+  let totalPaid = 0;
+  if (proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0) {
+    totalPaid = proposal.paymentTerms.installments
+      .filter((inst) => inst.isPaid)
+      .reduce((sum, inst) => sum + (Number(inst.amount) || 0), 0);
+  } else if (typeof proposal.paymentTerms?.totalPaidAmount === 'number') {
+    totalPaid = proposal.paymentTerms.totalPaidAmount;
+  } else {
+    // Infer based on paymentStatus if not explicit
+    const currentStatus = proposal.paymentTerms?.paymentStatus || 'odeme_bekliyor';
+    if (currentStatus === 'tamami_odendi') {
+      totalPaid = grandTotal;
+    } else if (currentStatus === 'ilk_taksit_odendi' || currentStatus === 'dosya_bitti_odeme_bekliyor') {
+      const advRatio = (proposal.paymentTerms?.advanceRatio || 50) / 100;
+      totalPaid = Math.round(grandTotal * advRatio);
+    } else if (currentStatus === 'ara_odeme_odendi') {
+      totalPaid = Math.round(grandTotal * 0.75);
+    } else {
+      totalPaid = 0;
+    }
+  }
+
+  const remaining = Math.max(0, grandTotal - totalPaid);
+  const percentagePaid = grandTotal > 0 ? Math.min(100, Math.round((totalPaid / grandTotal) * 100)) : 0;
+  const fileCompleted = Boolean(
+    proposal.paymentTerms?.fileCompleted || 
+    proposal.paymentTerms?.paymentStatus === 'dosya_bitti_odeme_bekliyor' ||
+    proposal.paymentTerms?.paymentStatus === 'tamami_odendi'
+  );
+
+  let paymentStatus = proposal.paymentTerms?.paymentStatus || 'odeme_bekliyor';
+
+  return {
+    grandTotal,
+    totalPaid,
+    remaining,
+    paymentStatus,
+    percentagePaid,
+    fileCompleted,
+  };
+}
+
+export function generateDefaultInstallments(grandTotal: number, advanceRatio: number = 50): PaymentInstallment[] {
+  const advPercent = advanceRatio > 0 && advanceRatio < 100 ? advanceRatio : 50;
+  const remainPercent = 100 - advPercent;
+  const firstAmount = Math.round(grandTotal * (advPercent / 100));
+  const secondAmount = Math.max(0, grandTotal - firstAmount);
+
+  return [
+    {
+      id: 'inst_1',
+      name: `1. Taksit (Peşinat / Başlangıç - %${advPercent})`,
+      percentage: advPercent,
+      amount: firstAmount,
+      isPaid: false,
+      paymentMethod: 'havale_eft',
+    },
+    {
+      id: 'inst_2',
+      name: `2. Taksit (Dosya / Rapor Teslimi - %${remainPercent})`,
+      percentage: remainPercent,
+      amount: secondAmount,
+      isPaid: false,
+      paymentMethod: 'havale_eft',
+    },
+  ];
+}
+
 export function createEmptyProposal(type: ProposalType): Proposal {
   const now = new Date().toISOString();
   const isGuclendirme = type === 'statik_guclendirme';
@@ -149,6 +256,7 @@ export function createEmptyProposal(type: ProposalType): Proposal {
     : (defaultPricingMethod === 'kat_basi' ? defaultUnitPrice * defaultFloors : defaultUnitPrice);
   const vatRate = 20;
   const totalAmount = Math.round(subtotal * (1 + vatRate / 100));
+  const defaultAdvanceRatio = 50;
 
   return {
     id: 'prop_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -196,13 +304,18 @@ export function createEmptyProposal(type: ProposalType): Proposal {
       currency: 'TL',
     },
     paymentTerms: {
-      advanceRatio: 50,
-      uponDeliveryRatio: 50,
+      advanceRatio: defaultAdvanceRatio,
+      uponDeliveryRatio: 100 - defaultAdvanceRatio,
       completionWorkDays: isGuclendirme ? 20 : 7,
       validityDays: 15,
       customNotes: isGuclendirme 
         ? 'İş başlangıcında %50, Avan proje tesliminde %50 olarak ödenecektir.'
         : 'Saha incelemesi esnasında elektrik ve su imkanı sağlanmalıdır.',
+      paymentStatus: 'odeme_bekliyor',
+      fileCompleted: false,
+      installments: generateDefaultInstallments(totalAmount, defaultAdvanceRatio),
+      totalPaidAmount: 0,
+      remainingAmount: totalAmount,
     },
     revisionNumber: 1,
     guclendirme: isGuclendirme ? JSON.parse(JSON.stringify(DEFAULT_GUCLENDIRME_PARAMS)) : undefined,
@@ -259,6 +372,31 @@ function getInitialMockProposals(): Proposal[] {
         completionWorkDays: 5,
         validityDays: 15,
         customNotes: 'Laboratuvar sonuçları Çevre ve Şehircilik Bakanlığı sistemine işlenecektir.',
+        paymentStatus: 'dosya_bitti_odeme_bekliyor',
+        fileCompleted: true,
+        installments: [
+          {
+            id: 'inst_1',
+            name: '1. Taksit (Peşinat - %50)',
+            percentage: 50,
+            amount: 21000,
+            isPaid: true,
+            paidAt: date1.split('T')[0],
+            paymentMethod: 'havale_eft',
+            notes: 'Ziraat Bankası hesabına ödendi.',
+          },
+          {
+            id: 'inst_2',
+            name: '2. Taksit (Dosya Teslimi - %50)',
+            percentage: 50,
+            amount: 21000,
+            isPaid: false,
+            paymentMethod: 'havale_eft',
+            notes: 'Rapor hazır, onay ve teslim bekleniyor.',
+          },
+        ],
+        totalPaidAmount: 21000,
+        remainingAmount: 21000,
       },
       revisionNumber: 1,
     },
@@ -300,11 +438,35 @@ function getInitialMockProposals(): Proposal[] {
         currency: 'TL',
       },
       paymentTerms: {
-        advanceRatio: 40,
-        uponDeliveryRatio: 60,
+        advanceRatio: 50,
+        uponDeliveryRatio: 50,
         completionWorkDays: 10,
         validityDays: 30,
         customNotes: 'Gerekli statik projeler idareden temin edilip tarafımıza iletilmiştir.',
+        paymentStatus: 'ilk_taksit_odendi',
+        fileCompleted: false,
+        installments: [
+          {
+            id: 'inst_1',
+            name: '1. Taksit (Peşinat - %50)',
+            percentage: 50,
+            amount: 138000,
+            isPaid: true,
+            paidAt: date2.split('T')[0],
+            paymentMethod: 'havale_eft',
+            notes: 'Şirket hesabına fatura karşılığı ödendi.',
+          },
+          {
+            id: 'inst_2',
+            name: '2. Taksit (Rapor Teslimi - %50)',
+            percentage: 50,
+            amount: 138000,
+            isPaid: false,
+            paymentMethod: 'havale_eft',
+          },
+        ],
+        totalPaidAmount: 138000,
+        remainingAmount: 138000,
       },
       revisionNumber: 1,
     },
@@ -351,6 +513,28 @@ function getInitialMockProposals(): Proposal[] {
         completionWorkDays: 8,
         validityDays: 15,
         customNotes: 'İncelemeler mesai saatleri dışında gerçekleştirilecektir.',
+        paymentStatus: 'odeme_bekliyor',
+        fileCompleted: false,
+        installments: [
+          {
+            id: 'inst_1',
+            name: '1. Taksit (Peşinat - %50)',
+            percentage: 50,
+            amount: 192000,
+            isPaid: false,
+            paymentMethod: 'havale_eft',
+          },
+          {
+            id: 'inst_2',
+            name: '2. Taksit (Teslimat - %50)',
+            percentage: 50,
+            amount: 192000,
+            isPaid: false,
+            paymentMethod: 'havale_eft',
+          },
+        ],
+        totalPaidAmount: 0,
+        remainingAmount: 384000,
       },
       revisionNumber: 1,
     },

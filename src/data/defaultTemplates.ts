@@ -1,5 +1,69 @@
-import { ProposalType, ScopeItem, CompanyProfile, GuclendirmeParams } from '../types';
+import { ProposalType, ProposalStatus, PaymentStatus, ScopeItem, CompanyProfile, GuclendirmeParams } from '../types';
 import { ISKA_LOGO_DATA_URL } from '../assets/iskaLogo';
+
+export const PROPOSAL_STATUS_LABELS: Record<ProposalStatus, { label: string; bg: string; dot: string }> = {
+  taslak: { label: 'Taslak', bg: 'bg-slate-100 text-slate-700 border-slate-300', dot: 'bg-slate-400' },
+  teklif_verildi: { label: 'Teklif Verildi', bg: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-500' },
+  onaylandi: { label: 'Onaylandı', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-500' },
+  revize: { label: 'Revize', bg: 'bg-amber-100 text-amber-800 border-amber-300', dot: 'bg-amber-500' },
+  iptal: { label: 'İptal Edildi', bg: 'bg-rose-100 text-rose-800 border-rose-300', dot: 'bg-rose-500' },
+};
+
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, { 
+  label: string; 
+  shortLabel: string;
+  bg: string; 
+  badgeColor: string;
+  dot: string;
+  description: string;
+  step: number;
+}> = {
+  odeme_bekliyor: { 
+    label: 'Ödeme Bekliyor', 
+    shortLabel: 'Bekliyor',
+    bg: 'bg-slate-100 text-slate-700 border-slate-300', 
+    badgeColor: 'bg-slate-100 text-slate-800 border-slate-300',
+    dot: 'bg-slate-400',
+    description: 'Henüz herhangi bir peşinat veya ödeme alınmadı.',
+    step: 0,
+  },
+  ilk_taksit_odendi: { 
+    label: '1. Taksit (Peşinat) Ödendi', 
+    shortLabel: '1. Taksit Ödendi',
+    bg: 'bg-blue-100 text-blue-800 border-blue-300', 
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
+    dot: 'bg-blue-500',
+    description: '1. Taksit / Peşinat tahsilatı yapıldı, saha çalışması başladı.',
+    step: 1,
+  },
+  ara_odeme_odendi: { 
+    label: '2. Taksit (Ara Ödeme) Ödendi', 
+    shortLabel: '2. Taksit Ödendi',
+    bg: 'bg-indigo-100 text-indigo-800 border-indigo-300', 
+    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    dot: 'bg-indigo-500',
+    description: '2. Taksit / Ara ödeme alındı.',
+    step: 2,
+  },
+  dosya_bitti_odeme_bekliyor: { 
+    label: 'Dosya Bitti, Kalan Ödeme Bekliyor', 
+    shortLabel: 'Dosya Bitti, Ödeme Bekliyor',
+    bg: 'bg-amber-100 text-amber-900 border-amber-400 font-bold', 
+    badgeColor: 'bg-amber-50 text-amber-800 border-amber-300 font-semibold',
+    dot: 'bg-amber-500',
+    description: 'Rapor / dosya tamamlandı; teslim öncesi son bakiye tahsilatı bekleniyor.',
+    step: 3,
+  },
+  tamami_odendi: { 
+    label: 'Tamamı Ödendi (Tahsilat Kapandı)', 
+    shortLabel: 'Tamamı Ödendi',
+    bg: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-bold', 
+    badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold',
+    dot: 'bg-emerald-500',
+    description: 'Tüm ödeme eksiksiz tahsil edildi ve hesap kapatıldı.',
+    step: 4,
+  },
+};
 
 export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
   name: 'İSKA DÖNÜŞÜM YAPI LABORATUVARI',
@@ -157,6 +221,12 @@ export const DEFAULT_SCOPES: Record<ProposalType, ScopeItem[]> = {
       title: 'Yapılan Performans Analizinin Yapılması',
       description: 'Tarafınızdan temin edilecek olan zemin raporları, statik ve mimari röleveler-projeler ve karot-sıyırma-röntgen raporlarındaki veriler göz önünde bulundurularak 2019 RYTEİE Yönetmeliğine göre yapılan Yap.net programı ile yetkilendirilmiş mühendis tarafından performans analizinin yapılması ve sonuçlarının ilgili kuruma rapor halinde sunulması',
       included: true,
+    },
+    {
+      id: 'ry10',
+      title: 'Kolluk Kuvvetleri & Kaymakamlık Koordinasyonu (Opsiyonel)',
+      description: 'Numune alımı ve saha incelemeleri sırasında izin verilmemesi durumunda resmî tutanak, Kaymakamlık yazışmaları ve Kolluk Kuvvetleri (Polis/Zabıta) eşliğinde tespit işlemlerinin yürütülmesi',
+      included: false,
     },
   ],
   orta_katli_risk: [

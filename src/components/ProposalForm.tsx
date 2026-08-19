@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Proposal, ProposalType, ScopeItem, GuclendirmeParams } from '../types';
-import { PROPOSAL_TYPE_LABELS, DEFAULT_SCOPES, DEFAULT_GUCLENDIRME_PARAMS } from '../data/defaultTemplates';
+import { Proposal, ProposalType, ScopeItem, GuclendirmeParams, PaymentStatus, PaymentInstallment } from '../types';
+import { PROPOSAL_TYPE_LABELS, DEFAULT_SCOPES, DEFAULT_GUCLENDIRME_PARAMS, PAYMENT_STATUS_LABELS } from '../data/defaultTemplates';
 import { CITIES, ISTANBUL_DISTRICTS, ISTANBUL_NEIGHBORHOODS } from '../data/istanbulData';
 import { 
   Building2, 
@@ -18,7 +18,12 @@ import {
   Check,
   Layers,
   Wrench,
-  Sparkles
+  Sparkles,
+  CreditCard,
+  Clock,
+  CheckCircle2,
+  FolderCheck,
+  Calendar
 } from 'lucide-react';
 
 interface ProposalFormProps {
@@ -330,13 +335,47 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
         (newPricing as Record<string, any>)[field] = value;
       }
 
+      if (field === 'invoiceType') {
+        const isFaturasiz = value === 'faturasiz';
+        newPricing.invoiceType = value;
+        newPricing.isWithoutVat = isFaturasiz;
+        newPricing.vatRate = isFaturasiz ? 0 : 20;
+      } else if (field === 'isWithoutVat') {
+        const isFaturasiz = Boolean(value);
+        newPricing.isWithoutVat = isFaturasiz;
+        newPricing.invoiceType = isFaturasiz ? 'faturasiz' : 'faturali';
+        newPricing.vatRate = isFaturasiz ? 0 : 20;
+      } else if (field === 'vatRate') {
+        const rate = Number(value);
+        newPricing.vatRate = rate;
+        newPricing.isWithoutVat = rate === 0;
+        newPricing.invoiceType = rate === 0 ? 'faturasiz' : 'faturali';
+      }
+
       const unitPrice = field === 'unitPrice' ? Number(value) || 0 : newPricing.unitPrice || 0;
       const method = field === 'pricingMethod' ? value : newPricing.pricingMethod;
+      const isRiskli = prev.type === 'riskli_yapi';
+      const kollukIncluded = field === 'kollukKuvvetiIncluded' 
+        ? Boolean(value) 
+        : Boolean(newPricing.kollukKuvvetiIncluded);
+      const kollukPrice = field === 'kollukKuvvetiPrice'
+        ? Number(value) || 0
+        : Number(newPricing.kollukKuvvetiPrice ?? 25000);
 
+      newPricing.kollukKuvvetiIncluded = kollukIncluded;
+      newPricing.kollukKuvvetiPrice = kollukPrice;
+
+      let baseSubtotal = 0;
       if (method === 'kat_basi') {
-        newPricing.subtotal = Math.round(unitPrice * (updatedFloors || 1));
+        baseSubtotal = Math.round(unitPrice * (updatedFloors || 1));
       } else {
-        newPricing.subtotal = Math.round(unitPrice);
+        baseSubtotal = Math.round(unitPrice);
+      }
+
+      if (isRiskli && kollukIncluded) {
+        newPricing.subtotal = baseSubtotal + kollukPrice;
+      } else {
+        newPricing.subtotal = baseSubtotal;
       }
 
       if (field === 'discountedPrice') {
@@ -347,8 +386,20 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
       }
 
       const afterDiscount = Math.max(0, newPricing.subtotal - (newPricing.discount || 0));
-      const vatAmount = (afterDiscount * (newPricing.vatRate || 0)) / 100;
+      const vatRate = newPricing.isWithoutVat ? 0 : (newPricing.vatRate || 0);
+      const vatAmount = (afterDiscount * vatRate) / 100;
       newPricing.totalAmount = Math.round(afterDiscount + vatAmount);
+
+      // Sync scope item ry10 with kollukKuvvetiIncluded if it exists in scopeItems
+      let updatedScopeItems = prev.scopeItems;
+      if (field === 'kollukKuvvetiIncluded' && isRiskli) {
+        const hasRy10 = prev.scopeItems.some(i => i.id === 'ry10');
+        if (hasRy10) {
+          updatedScopeItems = prev.scopeItems.map(i => 
+            i.id === 'ry10' ? { ...i, included: kollukIncluded } : i
+          );
+        }
+      }
 
       return {
         ...prev,
@@ -356,6 +407,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
           ...prev.property,
           totalFloors: field === 'floors' ? (updatedFloors || '') : prev.property.totalFloors,
         },
+        scopeItems: updatedScopeItems,
         pricing: newPricing,
       };
     });
@@ -363,12 +415,35 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
 
   // Toggle scope item
   const toggleScopeItem = (id: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      scopeItems: prev.scopeItems.map((item) =>
-        item.id === id ? { ...item, included: !item.included } : item
-      ),
-    }));
+    setFormData((prev) => {
+      const nextIncluded = !prev.scopeItems.find(i => i.id === id)?.included;
+      const updatedScope = prev.scopeItems.map((item) =>
+        item.id === id ? { ...item, included: nextIncluded } : item
+      );
+
+      if (id === 'ry10' && prev.type === 'riskli_yapi') {
+        const newPricing = { ...prev.pricing };
+        newPricing.kollukKuvvetiIncluded = nextIncluded;
+        const kollukPrice = Number(newPricing.kollukKuvvetiPrice ?? 25000);
+        newPricing.kollukKuvvetiPrice = kollukPrice;
+        const baseSubtotal = Math.round(newPricing.unitPrice || 0);
+        newPricing.subtotal = nextIncluded ? baseSubtotal + kollukPrice : baseSubtotal;
+        const afterDiscount = Math.max(0, newPricing.subtotal - (newPricing.discount || 0));
+        const vatAmount = (afterDiscount * (newPricing.vatRate || 0)) / 100;
+        newPricing.totalAmount = Math.round(afterDiscount + vatAmount);
+
+        return {
+          ...prev,
+          scopeItems: updatedScope,
+          pricing: newPricing,
+        };
+      }
+
+      return {
+        ...prev,
+        scopeItems: updatedScope,
+      };
+    });
   };
 
   // Add custom scope item
@@ -813,6 +888,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
                     Kat Sayısı {formData.type === 'orta_katli_risk' && <span className="text-amber-700 font-bold">(En az 10 Kat)</span>}
+                    {formData.type === 'riskli_yapi' && <span className="text-blue-700 font-semibold text-[10px] ml-1">(Konu/Raporda yer alır)</span>}
                   </label>
                   <input
                     type="number"
@@ -824,12 +900,17 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                         ? 'border-amber-500 bg-amber-50'
                         : 'border-slate-300'
                     }`}
-                    placeholder="10"
+                    placeholder="8"
                   />
                   {formData.type === 'orta_katli_risk' && Number(formData.property.totalFloors) < 10 && (
                     <p className="text-[10px] font-bold text-amber-700 mt-1 flex items-center gap-1">
                       <AlertCircle className="w-3 h-3 shrink-0" />
                       Orta katlı için en az 10 kat gereklidir.
+                    </p>
+                  )}
+                  {formData.type === 'riskli_yapi' && (
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      * Riskli yapıda fiyat toplam götürü verilir, hesap tablosunda kat çarpımı yapılmaz.
                     </p>
                   )}
                 </div>
@@ -1627,6 +1708,90 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                 </div>
 
               </div>
+            ) : formData.type === 'riskli_yapi' ? (
+              /* ======================================================== */
+              /* RİSKLİ YAPI TESPİTİ (6306) GÖTÜRÜ / TOPLAM FİYAT         */
+              /* ======================================================== */
+              <div className="space-y-4">
+                <div className="bg-blue-50/70 border border-blue-200 p-4 rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-blue-950">
+                      Riskli Yapı Tespiti Temel Hizmet Bedeli
+                    </span>
+                    <span className="text-[11px] font-bold bg-blue-100 text-blue-900 px-2 py-0.5 rounded">
+                      Götürü / Sabit Fiyat
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-3">
+                    6306 sayılı kanun kapsamında kat sayısı ile çarpım yapılmaz; tek ve net bir toplam teklif bedeli girilir. Bina kat sayısı (<strong>{formData.property.totalFloors || 'Belirtilmemiş'} Kat</strong>) raporda ve konu başlığında yer alır.
+                  </p>
+
+                  <div className="max-w-md">
+                    <label className="block text-xs font-bold text-slate-800 uppercase mb-1">
+                      Temel Hizmet Bedeli (KDV Hariç - TL) *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="500"
+                        required
+                        value={formData.pricing.unitPrice}
+                        onChange={(e) => updatePricing('unitPrice', Number(e.target.value) || 0)}
+                        className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-400 rounded-xl text-base font-black font-mono text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="Örn: 166667"
+                      />
+                      <span className="absolute right-3.5 top-3 text-xs font-bold text-slate-400 font-mono">
+                        TL + KDV
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* KOLLUK KUVVETLERİ / KAYMAKAMLIK REFİKATI SEÇENEĞİ */}
+                <div className={`p-4 rounded-xl border transition-all ${
+                  formData.pricing.kollukKuvvetiIncluded
+                    ? 'bg-amber-50/90 border-amber-400 ring-2 ring-amber-500/20'
+                    : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                }`}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        id="kollukKuvvetiCheck"
+                        checked={formData.pricing.kollukKuvvetiIncluded || false}
+                        onChange={(e) => updatePricing('kollukKuvvetiIncluded', e.target.checked)}
+                        className="mt-0.5 w-5 h-5 text-amber-600 rounded border-slate-300 focus:ring-amber-500 cursor-pointer"
+                      />
+                      <div>
+                        <label htmlFor="kollukKuvvetiCheck" className="text-xs font-black uppercase text-slate-900 cursor-pointer flex items-center gap-2">
+                          <span>Kolluk Kuvvetleri & Kaymakamlık Eşliğinde İşlem</span>
+                          <span className="bg-amber-200 text-amber-950 text-[10px] font-black px-2 py-0.5 rounded-full">
+                            +25.000 TL
+                          </span>
+                        </label>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          Numune alımı ve saha tespitlerinde izin verilmemesi durumunda resmî polis/zabıta ve Kaymakamlık refakatiyle operasyon yürütme bedelini fiyata ilave eder.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 sm:self-center shrink-0 pl-8 sm:pl-0">
+                      <span className="text-xs font-semibold text-slate-600">Ek Bedel:</span>
+                      <div className="relative w-32">
+                        <input
+                          type="number"
+                          step="1000"
+                          disabled={!formData.pricing.kollukKuvvetiIncluded}
+                          value={formData.pricing.kollukKuvvetiPrice ?? 25000}
+                          onChange={(e) => updatePricing('kollukKuvvetiPrice', Number(e.target.value) || 0)}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-black font-mono text-slate-900 disabled:bg-slate-100 outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                        <span className="absolute right-2 top-2 text-[10px] text-slate-400 font-bold">TL</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
               /* ======================================================== */
               /* DİĞER TEKLİF TÜRLERİ İÇİN STANDART FİYATLANDIRMA         */
@@ -1680,11 +1845,95 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
               </div>
             )}
 
+            {/* FATURA & KDV SEÇENEĞİ (FATURALI / FATURASIZ İŞLEM) */}
+            <div className="bg-white border-2 border-slate-200 p-4 sm:p-5 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                    Fatura & KDV Seçeneği *
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Müşterinin fatura talebine göre vergi durumunu belirleyin.
+                  </p>
+                </div>
+                <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${
+                  formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
+                    ? 'bg-amber-100 text-amber-900 border-amber-300'
+                    : 'bg-blue-100 text-blue-900 border-blue-300'
+                }`}>
+                  {formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
+                    ? 'Faturasız (%0 KDV Net)'
+                    : 'Faturalı (+%20 KDV)'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Faturalı Seçeneği */}
+                <button
+                  type="button"
+                  onClick={() => updatePricing('invoiceType', 'faturali')}
+                  className={`p-3.5 rounded-xl border text-left flex items-start gap-3 transition cursor-pointer ${
+                    (!formData.pricing.isWithoutVat && formData.pricing.invoiceType !== 'faturasiz')
+                      ? 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-500/20 text-blue-950 shadow-sm'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full mt-0.5 border flex items-center justify-center shrink-0 ${
+                    (!formData.pricing.isWithoutVat && formData.pricing.invoiceType !== 'faturasiz')
+                      ? 'border-blue-600 bg-blue-600'
+                      : 'border-slate-300 bg-white'
+                  }`}>
+                    {(!formData.pricing.isWithoutVat && formData.pricing.invoiceType !== 'faturasiz') && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs font-black">Faturalı İşlem (+%20 KDV)</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Resmî e-fatura kesilir, yasal %20 KDV fiyata dahil edilir.
+                    </div>
+                  </div>
+                </button>
+
+                {/* Faturasız Seçeneği */}
+                <button
+                  type="button"
+                  onClick={() => updatePricing('invoiceType', 'faturasiz')}
+                  className={`p-3.5 rounded-xl border text-left flex items-start gap-3 transition cursor-pointer ${
+                    (formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz')
+                      ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-500/20 text-amber-950 shadow-sm'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full mt-0.5 border flex items-center justify-center shrink-0 ${
+                    (formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz')
+                      ? 'border-amber-600 bg-amber-600'
+                      : 'border-slate-300 bg-white'
+                  }`}>
+                    {(formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz') && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs font-black flex items-center gap-1.5">
+                      <span>Faturasız İşlem (%0 KDV)</span>
+                      <span className="bg-amber-200 text-amber-950 text-[10px] font-black px-1.5 py-0.5 rounded">
+                        KDV'siz Net
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Fatura düzenlenmeyen durumlar için KDV eklenmez, sadece net ana para geçerli olur.
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
             {/* Subtotal Calculation Display */}
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  {formData.type === 'statik_guclendirme' ? 'Hesaplanan Liste Toplamı (KDV Hariç):' : 'Mevcut Olması Gereken Rakam (Liste Bedeli):'}
+                  {formData.type === 'statik_guclendirme' ? 'Hesaplanan Liste Toplamı (Ana Para):' : 'Mevcut Olması Gereken Rakam (Ana Para / Liste Bedeli):'}
                 </span>
                 <div className="text-xl font-black font-mono text-slate-900">
                   {formData.pricing.subtotal.toLocaleString('tr-TR')} TL
@@ -1692,6 +1941,12 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                 {formData.type === 'statik_guclendirme' ? (
                   <p className="text-xs text-slate-500 mt-0.5">
                     (1. Aşama: {(formData.guclendirme?.stage1Total || 0).toLocaleString('tr-TR')} TL + 2. Aşama: {(formData.guclendirme?.stage2Total || 0).toLocaleString('tr-TR')} TL)
+                  </p>
+                ) : formData.type === 'riskli_yapi' ? (
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium text-slate-600">
+                    {formData.pricing.kollukKuvvetiIncluded
+                      ? `(Temel Bedel: ${formData.pricing.unitPrice.toLocaleString('tr-TR')} TL + Kolluk Kuvveti: ${(formData.pricing.kollukKuvvetiPrice || 25000).toLocaleString('tr-TR')} TL)`
+                      : '(6306 Sayılı Kanun Kapsamında Götürü Sabit Hizmet Bedeli)'}
                   </p>
                 ) : formData.pricing.pricingMethod === 'kat_basi' && (
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -1702,15 +1957,17 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
 
               {/* VAT Selector */}
               <div className="w-full sm:w-48">
-                <label className="block text-xs font-semibold text-slate-600 mb-1">KDV Oranı (%)</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  KDV Durumu & Oranı
+                </label>
                 <select
-                  value={formData.pricing.vatRate}
+                  value={formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz' ? 0 : (formData.pricing.vatRate || 20)}
                   onChange={(e) => updatePricing('vatRate', Number(e.target.value))}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none bg-white"
                 >
-                  <option value={20}>%20 KDV</option>
-                  <option value={10}>%10 KDV</option>
-                  <option value={0}>%0 KDV (Muaf)</option>
+                  <option value={20}>%20 KDV (Faturalı)</option>
+                  <option value={10}>%10 KDV (İndirimli)</option>
+                  <option value={0}>%0 KDV (Faturasız / Muaf)</option>
                 </select>
               </div>
             </div>
@@ -1801,19 +2058,40 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
             {/* Total Display */}
             <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl flex items-center justify-between shadow-lg">
               <div>
-                <span className="text-xs uppercase font-extrabold tracking-wider text-amber-400">
-                  {formData.pricing.discount > 0 ? 'İskontolu ' : ''}KDV Dahil Genel Toplam:
-                </span>
-                <div className="text-3xl font-black font-mono text-white mt-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs uppercase font-extrabold tracking-wider text-amber-400">
+                    {formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
+                      ? (formData.pricing.discount > 0 ? 'İskontolu ' : '') + 'Faturasız Net Toplam (KDV Muaf):'
+                      : (formData.pricing.discount > 0 ? 'İskontolu ' : '') + 'KDV Dahil Genel Toplam:'}
+                  </span>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                    formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
+                      ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                      : 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
+                  }`}>
+                    {formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz' ? 'Faturasız (%0 KDV)' : 'Faturalı (+%20 KDV)'}
+                  </span>
+                </div>
+
+                <div className="text-3xl font-black font-mono text-white mt-1">
                   {formData.pricing.totalAmount.toLocaleString('tr-TR')} {formData.pricing.currency}
                 </div>
-                {formData.pricing.discount > 0 && (
-                  <div className="text-xs text-slate-400 mt-1 font-medium">
-                    (Liste Bedeli: {formData.pricing.subtotal.toLocaleString('tr-TR')} TL - İskonto: {formData.pricing.discount.toLocaleString('tr-TR')} TL)
-                  </div>
-                )}
+
+                <div className="text-xs text-slate-300 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
+                  <span>
+                    Ana Para (Net): <strong className="text-white font-mono">{Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0)).toLocaleString('tr-TR')} TL</strong>
+                  </span>
+                  <span>•</span>
+                  <span>
+                    KDV: <strong className="text-amber-300 font-mono">
+                      {formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz' 
+                        ? '0 TL (Muaf/Faturasız)' 
+                        : `${Math.round((Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0)) * (formData.pricing.vatRate || 20)) / 100).toLocaleString('tr-TR')} TL`}
+                    </strong>
+                  </span>
+                </div>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-2xl">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-2xl shrink-0">
                 ₺
               </div>
             </div>
@@ -1910,6 +2188,290 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
                   placeholder="Saha çalışması esnasında elektrik ve su imkanı sağlanmalıdır."
                 />
+              </div>
+
+            </div>
+
+            {/* Tahsilat ve Ödeme Takip Masası (İş Akışı) */}
+            <div className="pt-6 border-t-2 border-slate-200 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-700 flex items-center justify-center">
+                    <CreditCard className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900">
+                      Ödeme ve Tahsilat Takip Masası
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Taksit ödemeleri, peşinat ve dosya teslimat aşamalarını buradan yönetin
+                    </p>
+                  </div>
+                </div>
+
+                {/* Dosya Bitti Checkbox */}
+                <label className="inline-flex items-center gap-2 cursor-pointer bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 transition">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.paymentTerms.fileCompleted || formData.paymentTerms.paymentStatus === 'dosya_bitti_odeme_bekliyor')}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setFormData({
+                        ...formData,
+                        paymentTerms: {
+                          ...formData.paymentTerms,
+                          fileCompleted: checked,
+                          paymentStatus: checked && formData.paymentTerms.paymentStatus !== 'tamami_odendi'
+                            ? 'dosya_bitti_odeme_bekliyor'
+                            : formData.paymentTerms.paymentStatus || 'odeme_bekliyor',
+                        },
+                      });
+                    }}
+                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                  />
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                    <FolderCheck className="w-3.5 h-3.5 text-amber-600" />
+                    Dosya / Rapor Bitti
+                  </span>
+                </label>
+              </div>
+
+              {/* 5 Big Action Buttons for Payment Status */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                {(['odeme_bekliyor', 'ilk_taksit_odendi', 'ara_odeme_odendi', 'dosya_bitti_odeme_bekliyor', 'tamami_odendi'] as PaymentStatus[]).map((st) => {
+                  const info = PAYMENT_STATUS_LABELS[st];
+                  const isSelected = (formData.paymentTerms.paymentStatus || 'odeme_bekliyor') === st;
+
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => {
+                        const calculatedSubtotal = Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0));
+                        const calculatedTotal = formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
+                          ? calculatedSubtotal
+                          : Math.round(calculatedSubtotal * (1 + (formData.pricing.vatRate || 20) / 100));
+
+                        let newPaid = 0;
+                        if (st === 'tamami_odendi') {
+                          newPaid = calculatedTotal;
+                        } else if (st === 'ilk_taksit_odendi' || st === 'dosya_bitti_odeme_bekliyor') {
+                          newPaid = Math.round(calculatedTotal * ((formData.paymentTerms.advanceRatio || 50) / 100));
+                        } else if (st === 'ara_odeme_odendi') {
+                          newPaid = Math.round(calculatedTotal * 0.75);
+                        }
+
+                        // Update installments isPaid states
+                        const updatedInst = (formData.paymentTerms.installments || []).map((inst, idx) => {
+                          if (st === 'tamami_odendi') return { ...inst, isPaid: true };
+                          if (st === 'odeme_bekliyor') return { ...inst, isPaid: false };
+                          if (idx === 0) return { ...inst, isPaid: true };
+                          return inst;
+                        });
+
+                        setFormData({
+                          ...formData,
+                          paymentTerms: {
+                            ...formData.paymentTerms,
+                            paymentStatus: st,
+                            fileCompleted: st === 'dosya_bitti_odeme_bekliyor' ? true : formData.paymentTerms.fileCompleted,
+                            totalPaidAmount: newPaid,
+                            remainingAmount: Math.max(0, calculatedTotal - newPaid),
+                            installments: updatedInst.length > 0 ? updatedInst : formData.paymentTerms.installments,
+                          },
+                        });
+                      }}
+                      className={`p-3 rounded-xl border text-left transition flex flex-col justify-between gap-1.5 ${
+                        isSelected 
+                          ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500/20 shadow-sm' 
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className={`w-2.5 h-2.5 rounded-full ${info.dot}`} />
+                        {isSelected && <CheckCircle2 className="w-4 h-4 text-amber-600" />}
+                      </div>
+                      <div className="font-extrabold text-xs text-slate-900 leading-tight">
+                        {info.label}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Installments & Payment Details Table */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    Taksit & Tahsilat Girişleri
+                  </h4>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Ödenen taksitlerin kutucuğunu işaretleyin
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {/* Taksit 1 */}
+                  {(() => {
+                    const calculatedSubtotal = Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0));
+                    const calculatedTotal = formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
+                      ? calculatedSubtotal
+                      : Math.round(calculatedSubtotal * (1 + (formData.pricing.vatRate || 20) / 100));
+                    const advPercent = formData.paymentTerms.advanceRatio || 50;
+                    const inst1Amount = Math.round(calculatedTotal * (advPercent / 100));
+                    const inst2Amount = Math.max(0, calculatedTotal - inst1Amount);
+                    const is1Paid = ['ilk_taksit_odendi', 'ara_odeme_odendi', 'dosya_bitti_odeme_bekliyor', 'tamami_odendi'].includes(
+                      formData.paymentTerms.paymentStatus || ''
+                    );
+                    const is2Paid = formData.paymentTerms.paymentStatus === 'tamami_odendi';
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        
+                        {/* 1. Taksit Kartı */}
+                        <div className={`p-3 rounded-xl border transition ${
+                          is1Paid ? 'bg-emerald-50/60 border-emerald-300' : 'bg-white border-slate-200'
+                        }`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={is1Paid}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  const newStatus: PaymentStatus = checked 
+                                    ? (is2Paid ? 'tamami_odendi' : 'ilk_taksit_odendi')
+                                    : 'odeme_bekliyor';
+                                  setFormData({
+                                    ...formData,
+                                    paymentTerms: {
+                                      ...formData.paymentTerms,
+                                      paymentStatus: newStatus,
+                                      totalPaidAmount: checked ? (is2Paid ? calculatedTotal : inst1Amount) : 0,
+                                      remainingAmount: checked ? (is2Paid ? 0 : inst2Amount) : calculatedTotal,
+                                    },
+                                  });
+                                }}
+                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <span className="text-xs font-extrabold text-slate-900">
+                                1. Taksit (Peşinat - %{advPercent})
+                              </span>
+                            </label>
+                            <span className="font-mono font-bold text-xs text-slate-900">
+                              ₺{inst1Amount.toLocaleString('tr-TR')}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {is1Paid ? (
+                              <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> 1. Taksit Tahsil Edildi
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 font-medium">Ödeme Bekliyor</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 2. Taksit Kartı */}
+                        <div className={`p-3 rounded-xl border transition ${
+                          is2Paid ? 'bg-emerald-50/60 border-emerald-300' : (
+                            formData.paymentTerms.paymentStatus === 'dosya_bitti_odeme_bekliyor'
+                              ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-400'
+                              : 'bg-white border-slate-200'
+                          )
+                        }`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={is2Paid}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  const newStatus: PaymentStatus = checked 
+                                    ? 'tamami_odendi'
+                                    : (is1Paid ? (formData.paymentTerms.fileCompleted ? 'dosya_bitti_odeme_bekliyor' : 'ilk_taksit_odendi') : 'odeme_bekliyor');
+                                  setFormData({
+                                    ...formData,
+                                    paymentTerms: {
+                                      ...formData.paymentTerms,
+                                      paymentStatus: newStatus,
+                                      totalPaidAmount: checked ? calculatedTotal : (is1Paid ? inst1Amount : 0),
+                                      remainingAmount: checked ? 0 : (is1Paid ? inst2Amount : calculatedTotal),
+                                    },
+                                  });
+                                }}
+                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <span className="text-xs font-extrabold text-slate-900">
+                                2. Taksit (Kalan - %{100 - advPercent})
+                              </span>
+                            </label>
+                            <span className="font-mono font-bold text-xs text-slate-900">
+                              ₺{inst2Amount.toLocaleString('tr-TR')}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {is2Paid ? (
+                              <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Tamamı Tahsil Edildi
+                              </span>
+                            ) : formData.paymentTerms.paymentStatus === 'dosya_bitti_odeme_bekliyor' ? (
+                              <span className="text-amber-800 font-bold flex items-center gap-1">
+                                <FolderCheck className="w-3.5 h-3.5 text-amber-600" /> Dosya Hazır, Kalan Bakiye Bekleniyor
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 font-medium">Teslimat / Son Aşama</span>
+                            )}
+                          </div>
+                        </div>
+
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Live Payment Summary Box */}
+                {(() => {
+                  const calculatedSubtotal = Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0));
+                  const calculatedTotal = formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
+                    ? calculatedSubtotal
+                    : Math.round(calculatedSubtotal * (1 + (formData.pricing.vatRate || 20) / 100));
+                  const currentSt = formData.paymentTerms.paymentStatus || 'odeme_bekliyor';
+                  const advRatio = (formData.paymentTerms.advanceRatio || 50) / 100;
+                  
+                  let paid = 0;
+                  if (currentSt === 'tamami_odendi') paid = calculatedTotal;
+                  else if (currentSt === 'ilk_taksit_odendi' || currentSt === 'dosya_bitti_odeme_bekliyor') paid = Math.round(calculatedTotal * advRatio);
+                  else if (currentSt === 'ara_odeme_odendi') paid = Math.round(calculatedTotal * 0.75);
+                  
+                  const remaining = Math.max(0, calculatedTotal - paid);
+
+                  return (
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-center">
+                      <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div className="text-[10px] uppercase font-bold text-slate-400">Toplam Tutar</div>
+                        <div className="text-xs sm:text-sm font-black text-slate-900 font-mono">
+                          ₺{calculatedTotal.toLocaleString('tr-TR')}
+                        </div>
+                      </div>
+                      <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+                        <div className="text-[10px] uppercase font-bold text-emerald-800">Tahsil Edilen</div>
+                        <div className="text-xs sm:text-sm font-black text-emerald-700 font-mono">
+                          ₺{paid.toLocaleString('tr-TR')}
+                        </div>
+                      </div>
+                      <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                        <div className="text-[10px] uppercase font-bold text-amber-800">Kalan Alacak</div>
+                        <div className="text-xs sm:text-sm font-black text-amber-700 font-mono">
+                          ₺{remaining.toLocaleString('tr-TR')}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
               </div>
 
             </div>

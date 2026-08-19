@@ -11,7 +11,10 @@ import {
   Menu,
   X,
   BarChart3,
-  Lock
+  Lock,
+  FileSpreadsheet,
+  Cloud,
+  CloudCheck
 } from 'lucide-react';
 import { ISKA_LOGO_DATA_URL } from '../assets/iskaLogo';
 
@@ -26,6 +29,8 @@ interface HeaderProps {
   proposalCount: number;
   onExportData: () => void;
   onImportData: () => void;
+  onExportExcel?: () => void;
+  isCloudSynced?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,6 +44,8 @@ export const Header: React.FC<HeaderProps> = ({
   proposalCount,
   onExportData,
   onImportData,
+  onExportExcel,
+  isCloudSynced = true,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
@@ -127,7 +134,30 @@ export const Header: React.FC<HeaderProps> = ({
               <Settings className="w-5 h-5" />
             </button>
 
+            {/* Cloud Status Indicator */}
+            <div 
+              className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                isCloudSynced 
+                  ? 'bg-emerald-950/50 border-emerald-800/60 text-emerald-300' 
+                  : 'bg-amber-950/50 border-amber-800/60 text-amber-300'
+              }`}
+              title={isCloudSynced ? 'Firebase Firestore Bulut Veritabanı Aktif ve Senkronize' : 'Bulut Veritabanına Bağlanıyor...'}
+            >
+              <Cloud className={`w-3.5 h-3.5 ${isCloudSynced ? 'text-emerald-400' : 'text-amber-400 animate-pulse'}`} />
+              <span>{isCloudSynced ? 'Bulut Aktif' : 'Bulut Beklemede'}</span>
+            </div>
+
             <div className="h-5 w-px bg-slate-800 my-auto mx-1" />
+
+            {onExportExcel && (
+              <button
+                onClick={onExportExcel}
+                className="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 rounded-lg transition"
+                title="Tüm Teklifleri Excel Olarak İndir (.xlsx)"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+              </button>
+            )}
 
             <button
               onClick={onExportData}
@@ -208,6 +238,19 @@ export const Header: React.FC<HeaderProps> = ({
             Yeni Teklif Oluştur
           </button>
 
+          {onOpenAnalytics && (
+            <button
+              onClick={() => {
+                onOpenAnalytics();
+                setMobileMenuOpen(false);
+              }}
+              className="w-full text-left px-3 py-2.5 rounded-lg text-sm font-semibold text-emerald-300 hover:bg-slate-800 flex items-center gap-2 bg-emerald-950/40 border border-emerald-800/60"
+            >
+              <BarChart3 className="w-4 h-4 text-emerald-400" />
+              Aylık Gelir ve İş Analizi
+            </button>
+          )}
+
           <button
             onClick={() => {
               onOpenCalculator();
@@ -233,6 +276,18 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <div className="pt-2 border-t border-slate-800 flex items-center justify-around text-xs text-slate-400">
+            {onExportExcel && (
+              <button 
+                onClick={() => {
+                  onExportExcel();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 py-1 font-semibold"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                Excel İndir
+              </button>
+            )}
             <button 
               onClick={() => {
                 onExportData();

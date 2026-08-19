@@ -1529,7 +1529,7 @@ ${companyProfile.name}
                     {/* Konu Header */}
                     <div className="mb-6 font-bold text-xs text-slate-900 leading-relaxed px-1 bg-blue-50/80 p-3 rounded-xl border border-blue-200">
                       <span className="font-extrabold text-blue-950">Konu : </span>
-                      {proposal.property.city || 'İstanbul'} İLİ, {proposal.property.district || '-'} İlçesi, {proposal.property.neighborhood || '-'} Mahallesi, Ada: {proposal.property.ada || '-'} / Parsel: {proposal.property.parsel || '-'} Bulunan Yapı İçin 6306 Sayılı Kanun Ve 2019 RYTEİE Yönetmeliğine Göre Riskli Yapı Tespiti Ve Rapor Hazırlanması
+                      {proposal.property.city || 'İstanbul'} İLİ, {proposal.property.district || '-'} İlçesi, {proposal.property.neighborhood || '-'} Mahallesi, {proposal.property.pafta ? `Pafta: ${proposal.property.pafta}, ` : ''}Ada: {proposal.property.ada || '-'} / Parsel: {proposal.property.parsel || '-'}{proposal.property.fullAddress ? `, ${proposal.property.fullAddress}` : ''} konumunda bulunan {Number(proposal.property.totalFloors) > 0 ? `(${proposal.property.totalFloors} Katlı) ` : ''}Yapı İçin 6306 Sayılı Kanun Ve 2019 RYTEİE Yönetmeliğine Göre Riskli Yapı Tespiti Ve Rapor Hazırlanması
                     </div>
 
                     {/* Intro text */}
@@ -1634,13 +1634,21 @@ ${companyProfile.name}
                       </h3>
 
                       <div className="space-y-2 text-xs">
-                        {Number(proposal.property.totalFloors || 0) > 0 && Number(proposal.pricing.unitPrice || 0) > 0 && (
-                          <div className="flex justify-between text-slate-700 font-medium">
-                            <span>Birim Hesaplama:</span>
-                            <span className="font-mono font-bold text-slate-900">
-                              {proposal.property.totalFloors} Kat × ₺{Number(proposal.pricing.unitPrice).toLocaleString('tr-TR')}
-                            </span>
-                          </div>
+                        {proposal.pricing.kollukKuvvetiIncluded && (
+                          <>
+                            <div className="flex justify-between text-slate-700 font-medium">
+                              <span>Riskli Yapı Tespiti Hizmet Bedeli:</span>
+                              <span className="font-mono font-bold text-slate-900">
+                                ₺{Number(proposal.pricing.unitPrice || 0).toLocaleString('tr-TR')} + KDV
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-amber-950 font-bold bg-amber-50/80 px-2 py-1 rounded border border-amber-200">
+                              <span>Kolluk Kuvvetleri & Kaymakamlık Operasyon Bedeli:</span>
+                              <span className="font-mono font-extrabold text-amber-900">
+                                +₺{Number(proposal.pricing.kollukKuvvetiPrice || 25000).toLocaleString('tr-TR')} + KDV
+                              </span>
+                            </div>
+                          </>
                         )}
 
                         {proposal.pricing.discount > 0 ? (
@@ -1665,8 +1673,8 @@ ${companyProfile.name}
                             </div>
                           </>
                         ) : (
-                          <div className="flex justify-between text-slate-800 font-bold">
-                            <span>Hizmet Bedeli (KDV Hariç):</span>
+                          <div className={`flex justify-between text-slate-800 font-bold ${proposal.pricing.kollukKuvvetiIncluded ? 'border-t border-slate-200 pt-1' : ''}`}>
+                            <span>{proposal.pricing.kollukKuvvetiIncluded ? 'Toplam Hizmet Bedeli (KDV Hariç):' : 'Hizmet Bedeli (KDV Hariç):'}</span>
                             <span className="font-mono font-bold text-slate-900">₺{proposal.pricing.subtotal.toLocaleString('tr-TR')} + KDV</span>
                           </div>
                         )}
@@ -1692,7 +1700,15 @@ ${companyProfile.name}
                     {/* Notlar & Uyarılar */}
                     <div className="space-y-1.5 text-xs text-slate-800 mb-6">
                       <p>*** Binalarda dilatasyon tespit edilmesi durumunda her dilatasyon ayrı bir yapı olarak değerlendirilecektir.</p>
-                      <p>*** Numune çalışmaları için ilk gidildiğinde izin verilmez ise tutanak tutulup Kaymakamlık aracılığı ile kolluk kuvvetleri desteğinin alınması ile numuneler alınacaktır. Kolluk kuvveti ile yapılması durumunda fiyatlarımız tekrar revize edilecektir.</p>
+                      {proposal.pricing.kollukKuvvetiIncluded ? (
+                        <p className="text-blue-950 font-bold bg-blue-50/80 p-2 rounded-lg border border-blue-200">
+                          *** Bu teklif, saha tespitlerinde izin verilmeyen / engellenen durumlarda Kaymakamlık resmî protokolü ve Kolluk Kuvvetleri (Polis/Zabıta) refakatinde numune alma operasyonunu (+25.000 TL) kapsayacak şekilde hazırlanmıştır.
+                        </p>
+                      ) : (
+                        <p>
+                          *** Numune çalışmaları için ilk gidildiğinde izin verilmez ise tutanak tutulup Kaymakamlık aracılığı ile kolluk kuvvetleri desteğinin alınması ile numuneler alınacaktır. Bu teklif standart numune alımını kapsamakta olup kolluk kuvveti ile işlem yapılması durumunda +25.000 TL operasyon bedeli ilave edilecektir.
+                        </p>
+                      )}
                       <p>*** Numune işlemlerinden sonra tamirat-tadilat istenmesi fiyata dahil değildir.</p>
                       <p className="text-rose-900 font-bold bg-rose-50 p-2 rounded-lg border border-rose-200 mt-2">
                         Not 1: Numune için gün belirlendikten 1 hafta içerisinde %30'luk ön ödeme yapılmaz ise program günü iptal edilecektir.

@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "Proposal": {
+      "title": "Proposal",
+      "description": "Bina risk tespiti, orta katli bina ve deprem performans analizi teklifleri",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Teklif benzersiz kimligi"
+        },
+        "proposalNumber": {
+          "type": "string",
+          "description": "Teklif numarasi (orn: ISK-2026-001)"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["riskli_yapi", "orta_katli_risk", "performans_raporu", "statik_guclendirme"],
+          "description": "Teklif turu"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["taslak", "teklif_verildi", "onaylandi", "revize", "iptal"],
+          "description": "Teklif durumu"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Olusturulma tarihi (ISO string)"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Guncellenme tarihi (ISO string)"
+        },
+        "client": {
+          "type": "object",
+          "description": "Musteri bilgileri"
+        },
+        "property": {
+          "type": "object",
+          "description": "Yapi ve adres bilgileri"
+        },
+        "pricing": {
+          "type": "object",
+          "description": "Fiyatlandirma ve KDV detaylari"
+        },
+        "paymentTerms": {
+          "type": "object",
+          "description": "Odeme sartlari"
+        },
+        "scopeItems": {
+          "type": "array",
+          "description": "Kapsam maddeleri"
+        }
+      },
+      "required": ["id", "proposalNumber", "type", "status", "createdAt", "updatedAt"]
+    },
+    "CompanyProfile": {
+      "title": "CompanyProfile",
+      "description": "Firma bilgileri ve teklif ustluk ayarlari",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "website": { "type": "string" },
+        "bankInfo": { "type": "string" },
+        "defaultNote": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/proposals/{proposalId}": {
+      "schema": "Proposal",
+      "description": "Kayitli tum teklif dokumanlari"
+    },
+    "/settings/companyProfile": {
+      "schema": "CompanyProfile",
+      "description": "Sirket profil ayarlari ve banka bilgileri"
+    }
+  }
+}

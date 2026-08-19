@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Proposal, CompanyProfile, ProposalType, ProposalStatus } from './types';
+import { Proposal, CompanyProfile, ProposalType, ProposalStatus, PaymentStatus } from './types';
 import { 
   getProposals, 
   saveProposal, 
@@ -7,7 +7,8 @@ import {
   duplicateProposal, 
   getCompanyProfile, 
   saveCompanyProfile, 
-  createEmptyProposal 
+  createEmptyProposal,
+  getProposalPaymentSummary
 } from './utils/storage';
 
 import { Header } from './components/Header';
@@ -18,6 +19,14 @@ import { CompanySettingsModal } from './components/CompanySettingsModal';
 import { QuickPriceCalculatorModal } from './components/QuickPriceCalculatorModal';
 import { MonthlyAnalyticsModal } from './components/MonthlyAnalyticsModal';
 import { PasswordLogin } from './components/PasswordLogin';
+import { exportProposalsToExcel } from './utils/excelExport';
+import { 
+  testFirestoreConnection, 
+  subscribeProposalsFromCloud, 
+  fetchCompanyProfileFromCloud, 
+  syncSaveProposalToCloud, 
+  syncSaveCompanyProfileToCloud 
+} from './firebase';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -25,10 +34,11 @@ export default function App() {
            sessionStorage.getItem('iska_auth_session') === 'authenticated';
   });
 
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(getCompanyProfile());
+  const [proposals, setProposals] = useState<Proposal[]>(() => getProposals());
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => getCompanyProfile());
   const [activeTab, setActiveTab] = useState<'list' | 'form' | 'settings'>('list');
   const [currentProposal, setCurrentProposal] = useState<Proposal | null>(null);
+  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
   
   // Modals
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -43,20 +53,46 @@ export default function App() {
     setIsAuthenticated(false);
   };
 
-  // If not authenticated, render Password Login screen
-  if (!isAuthenticated) {
-    return (
-      <PasswordLogin
-        onSuccess={() => setIsAuthenticated(true)}
-        savedLogoUrl={companyProfile?.logoUrl}
-      />
-    );
-  }
-
-  // Load initial proposals from localStorage
+  // Test Firestore Connection & Setup Realtime Sync
   useEffect(() => {
-    const loaded = getProposals();
-    setProposals(loaded);
+    testFirestoreConnection().then((connected) => {
+      if (connected) {
+        setIsCloudSynced(true);
+      }
+    });
+
+    // Hydrate Company Profile from Cloud
+    fetchCompanyProfileFromCloud().then((cloudProfile) => {
+      if (cloudProfile && cloudProfile.name) {
+        setCompanyProfile(cloudProfile);
+        localStorage.setItem('bina_teklif_company_v1', JSON.stringify(cloudProfile));
+      } else {
+        // Sync local default profile to cloud if cloud is empty
+        const localProf = getCompanyProfile();
+        syncSaveCompanyProfileToCloud(localProf).catch(() => {});
+      }
+    });
+
+    // Realtime Listener for Proposals from Firestore Cloud
+    const unsubscribe = subscribeProposalsFromCloud((cloudList) => {
+      if (cloudList && cloudList.length > 0) {
+        setProposals(cloudList);
+        localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(cloudList));
+        setIsCloudSynced(true);
+      } else {
+        // If cloud is initially empty, seed cloud with local proposals
+        const localList = getProposals();
+        if (localList.length > 0) {
+          localList.forEach((p) => {
+            syncSaveProposalToCloud(p).catch(() => {});
+          });
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   // Save Company Profile updates
@@ -113,6 +149,48 @@ export default function App() {
     const found = proposals.find((p) => p.id === id);
     if (found) {
       const updated = { ...found, status: newStatus };
+      saveProposal(updated);
+      setProposals(getProposals());
+    }
+  };
+
+  // Quick Payment Status change
+  const handlePaymentStatusChange = (id: string, newPaymentStatus: PaymentStatus) => {
+    const found = proposals.find((p) => p.id === id);
+    if (found) {
+      const isWithoutVat = Boolean(found.pricing?.isWithoutVat || found.pricing?.invoiceType === 'faturasiz' || found.pricing?.vatRate === 0);
+      const subtotal = Math.max(0, (found.pricing?.subtotal || 0) - (found.pricing?.discount || 0));
+      const totalAmount = isWithoutVat ? subtotal : Math.round(subtotal * (1 + (found.pricing?.vatRate || 20) / 100));
+      const advRatio = (found.paymentTerms?.advanceRatio || 50) / 100;
+      
+      let newPaid = 0;
+      if (newPaymentStatus === 'tamami_odendi') {
+        newPaid = totalAmount;
+      } else if (newPaymentStatus === 'ilk_taksit_odendi' || newPaymentStatus === 'dosya_bitti_odeme_bekliyor') {
+        newPaid = Math.round(totalAmount * advRatio);
+      } else if (newPaymentStatus === 'ara_odeme_odendi') {
+        newPaid = Math.round(totalAmount * 0.75);
+      }
+
+      const updatedInstallments = (found.paymentTerms?.installments || []).map((inst, idx) => {
+        if (newPaymentStatus === 'tamami_odendi') return { ...inst, isPaid: true };
+        if (newPaymentStatus === 'odeme_bekliyor') return { ...inst, isPaid: false };
+        if (idx === 0) return { ...inst, isPaid: true };
+        return inst;
+      });
+
+      const updated: Proposal = {
+        ...found,
+        paymentTerms: {
+          ...found.paymentTerms,
+          paymentStatus: newPaymentStatus,
+          fileCompleted: newPaymentStatus === 'dosya_bitti_odeme_bekliyor' ? true : found.paymentTerms?.fileCompleted,
+          totalPaidAmount: newPaid,
+          remainingAmount: Math.max(0, totalAmount - newPaid),
+          installments: updatedInstallments.length > 0 ? updatedInstallments : found.paymentTerms?.installments,
+        },
+        updatedAt: new Date().toISOString(),
+      };
       saveProposal(updated);
       setProposals(getProposals());
     }
@@ -196,6 +274,16 @@ export default function App() {
     input.click();
   };
 
+  // If not authenticated, render Password Login screen
+  if (!isAuthenticated) {
+    return (
+      <PasswordLogin
+        onSuccess={() => setIsAuthenticated(true)}
+        savedLogoUrl={companyProfile?.logoUrl}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-900 flex flex-col">
       
@@ -216,7 +304,9 @@ export default function App() {
         proposalCount={proposals.length}
         onExportData={handleExportData}
         onImportData={handleImportData}
+        onExportExcel={() => exportProposalsToExcel(proposals)}
         onLogout={handleLogout}
+        isCloudSynced={isCloudSynced}
       />
 
       {/* Main Container */}
@@ -231,6 +321,7 @@ export default function App() {
             onDelete={handleDeleteProposal}
             onNewProposal={() => handleNewProposal('riskli_yapi')}
             onStatusChange={handleStatusChange}
+            onPaymentStatusChange={handlePaymentStatusChange}
             onOpenAnalytics={() => setAnalyticsOpen(true)}
           />
         )}
