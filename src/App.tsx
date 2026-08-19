@@ -24,7 +24,6 @@ import {
   testFirestoreConnection, 
   subscribeProposalsFromCloud, 
   fetchCompanyProfileFromCloud, 
-  fetchProposalsFromCloud,
   syncSaveProposalToCloud, 
   syncSaveCompanyProfileToCloud 
 } from './firebase';
@@ -275,43 +274,6 @@ export default function App() {
     input.click();
   };
 
-  // Manual Cloud Refresh & Two-Way Sync
-  const handleRefreshCloud = async () => {
-    try {
-      // 1. Upload any local proposals to Firestore first
-      const localList = getProposals();
-      if (localList.length > 0) {
-        await Promise.all(localList.map((p) => syncSaveProposalToCloud(p)));
-      }
-
-      // 2. Fetch all latest proposals from Firestore
-      const [cloudList, cloudProfile] = await Promise.all([
-        fetchProposalsFromCloud(),
-        fetchCompanyProfileFromCloud(),
-      ]);
-
-      let count = 0;
-      if (cloudList && cloudList.length > 0) {
-        setProposals(cloudList);
-        localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(cloudList));
-        count = cloudList.length;
-      } else if (localList.length > 0) {
-        count = localList.length;
-      }
-
-      if (cloudProfile && cloudProfile.name) {
-        setCompanyProfile(cloudProfile);
-        localStorage.setItem('bina_teklif_company_v1', JSON.stringify(cloudProfile));
-      }
-
-      setIsCloudSynced(true);
-      alert(`✅ Bulut Senkronizasyonu Başarılı!\n\nFirestore bulut veritabanı ile bağlantı kuruldu.\nToplam ${count} adet teklif tüm cihazlarınızla senkronize edildi.`);
-    } catch (e: any) {
-      console.warn('Manual cloud refresh error:', e);
-      alert(`⚠️ Bulut Bağlantı Uyarısı:\n\n${e?.message || 'Bulut veritabanına bağlanırken bir sorun oluştu.'}\nLütfen firebase-applet-config.json dosyasının GitHub ve projenizde yüklü olduğundan emin olun.`);
-    }
-  };
-
   // If not authenticated, render Password Login screen
   if (!isAuthenticated) {
     return (
@@ -345,7 +307,6 @@ export default function App() {
         onExportExcel={() => exportProposalsToExcel(proposals)}
         onLogout={handleLogout}
         isCloudSynced={isCloudSynced}
-        onRefreshCloud={handleRefreshCloud}
       />
 
       {/* Main Container */}
