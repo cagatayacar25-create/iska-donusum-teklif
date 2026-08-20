@@ -1,5 +1,6 @@
 import { Proposal, CompanyProfile, ProposalType, PaymentStatus, PaymentInstallment } from '../types';
 import { DEFAULT_COMPANY_PROFILE, DEFAULT_SCOPES, DEFAULT_GUCLENDIRME_PARAMS } from '../data/defaultTemplates';
+import { INITIAL_PROPOSALS } from '../data/defaultProposals';
 import { 
   syncSaveProposalToCloud, 
   syncDeleteProposalFromCloud, 
@@ -29,7 +30,7 @@ export function getCompanyProfile(): CompanyProfile {
 export function saveCompanyProfile(profile: CompanyProfile): void {
   try {
     localStorage.setItem(COMPANY_KEY, JSON.stringify(profile));
-    // Push immediately to Firestore
+    // Push immediately to Firestore / Cloud
     syncSaveCompanyProfileToCloud(profile).catch((err) => {
       console.warn('Could not sync company profile to cloud:', err);
     });
@@ -50,7 +51,8 @@ export function getProposals(): Proposal[] {
   } catch (e) {
     console.error('Error loading proposals from cache:', e);
   }
-  return [];
+  // Default to the 14 complete initial proposals on first run
+  return INITIAL_PROPOSALS;
 }
 
 export function saveProposals(proposals: Proposal[]): void {
@@ -118,8 +120,21 @@ export function duplicateProposal(id: string): Proposal | null {
 export function generateNewProposalNumber(): string {
   const proposals = getProposals();
   const year = new Date().getFullYear();
-  const count = proposals.length + 1;
-  const numFormatted = String(count).padStart(3, '0');
+  
+  // Find max numeric proposal number
+  let maxNum = proposals.length;
+  proposals.forEach((p) => {
+    const match = p.proposalNumber.match(/TKL-\d{4}-(\d+)/);
+    if (match && match[1]) {
+      const val = parseInt(match[1], 10);
+      if (!isNaN(val) && val > maxNum) {
+        maxNum = val;
+      }
+    }
+  });
+
+  const nextNum = maxNum + 1;
+  const numFormatted = String(nextNum).padStart(3, '0');
   return `TKL-${year}-${numFormatted}`;
 }
 
@@ -290,220 +305,5 @@ export function createEmptyProposal(type: ProposalType): Proposal {
 }
 
 export function getInitialMockProposals(): Proposal[] {
-  const now = new Date();
-  const date1 = new Date(now.getTime() - 86400000 * 1).toISOString();
-  const date2 = new Date(now.getTime() - 86400000 * 3).toISOString();
-  const date3 = new Date(now.getTime() - 86400000 * 6).toISOString();
-
-  return [
-    {
-      id: 'demo_prop_1',
-      proposalNumber: 'TKL-2026-001',
-      type: 'riskli_yapi',
-      title: 'Huzur Apartmanı Riskli Yapı Tespiti',
-      status: 'teklif_verildi',
-      createdAt: date1,
-      updatedAt: date1,
-      client: {
-        name: 'Huzur Apt. Kat Malikleri',
-        contactPerson: 'Mehmet Demir',
-        phone: '0532 987 65 43',
-        email: 'huzurapt.yonetim@gmail.com',
-        notes: '6306 sayılı kanun kapsamında kentsel dönüşüm başvurusu yapılacak.',
-      },
-      property: {
-        city: 'İstanbul',
-        district: 'Beyoğlu',
-        neighborhood: 'Cihangir Mah.',
-        fullAddress: 'Mumhane Cad. No: 18, Beyoğlu / İstanbul',
-        ada: '412',
-        parsel: '8',
-        totalFloors: 5,
-        buildingType: 'Betonarme',
-        usagePurpose: 'Karma',
-        hasAsBuiltProject: 'Hayır yok (Röleve Alınacak)',
-      },
-      scopeItems: DEFAULT_SCOPES.riskli_yapi,
-      pricing: {
-        unitPrice: 38000,
-        pricingMethod: 'toplam_sabit',
-        subtotal: 38000,
-        vatRate: 20,
-        discount: 3000,
-        totalAmount: 42000,
-        currency: 'TL',
-      },
-      paymentTerms: {
-        advanceRatio: 50,
-        uponDeliveryRatio: 50,
-        completionWorkDays: 5,
-        validityDays: 15,
-        customNotes: 'Laboratuvar sonuçları Çevre ve Şehircilik Bakanlığı sistemine işlenecektir.',
-        paymentStatus: 'dosya_bitti_odeme_bekliyor',
-        fileCompleted: true,
-        installments: [
-          {
-            id: 'inst_1',
-            name: '1. Taksit (Peşinat - %50)',
-            percentage: 50,
-            amount: 21000,
-            isPaid: true,
-            paidAt: date1.split('T')[0],
-            paymentMethod: 'havale_eft',
-            notes: 'Ziraat Bankası hesabına ödendi.',
-          },
-          {
-            id: 'inst_2',
-            name: '2. Taksit (Dosya Teslimi - %50)',
-            percentage: 50,
-            amount: 21000,
-            isPaid: false,
-            paymentMethod: 'havale_eft',
-            notes: 'Rapor hazır, onay ve teslim bekleniyor.',
-          },
-        ],
-        totalPaidAmount: 21000,
-        remainingAmount: 21000,
-      },
-      revisionNumber: 1,
-    },
-    {
-      id: 'demo_prop_2',
-      proposalNumber: 'TKL-2026-002',
-      type: 'performans_raporu',
-      title: 'Ege Plaza Deprem Performans Analizi',
-      status: 'onaylandi',
-      createdAt: date2,
-      updatedAt: date2,
-      client: {
-        name: 'Ege Gayrimenkul A.Ş.',
-        contactPerson: 'Selin Arslan',
-        phone: '0212 444 01 23',
-        email: 'selin.arslan@egegayrimenkul.com',
-        notes: 'Banka kredi ve sigorta işlemleri için performans raporu istendi.',
-      },
-      property: {
-        city: 'İstanbul',
-        district: 'Kadıköy',
-        neighborhood: 'Göztepe Mah.',
-        fullAddress: 'Bağdat Cad. No: 142, Kadıköy / İstanbul',
-        ada: '2045',
-        parsel: '12',
-        totalFloors: 8,
-        buildingType: 'Betonarme',
-        usagePurpose: 'İşyeri',
-        hasAsBuiltProject: 'Evet var',
-      },
-      scopeItems: DEFAULT_SCOPES.performans_raporu,
-      pricing: {
-        unitPrice: 30000,
-        pricingMethod: 'kat_basi',
-        subtotal: 240000,
-        vatRate: 20,
-        discount: 10000,
-        totalAmount: 276000,
-        currency: 'TL',
-      },
-      paymentTerms: {
-        advanceRatio: 50,
-        uponDeliveryRatio: 50,
-        completionWorkDays: 10,
-        validityDays: 30,
-        customNotes: 'Gerekli statik projeler idareden temin edilip tarafımıza iletilmiştir.',
-        paymentStatus: 'ilk_taksit_odendi',
-        fileCompleted: false,
-        installments: [
-          {
-            id: 'inst_1',
-            name: '1. Taksit (Peşinat - %50)',
-            percentage: 50,
-            amount: 138000,
-            isPaid: true,
-            paidAt: date2.split('T')[0],
-            paymentMethod: 'havale_eft',
-            notes: 'Şirket hesabına fatura karşılığı ödendi.',
-          },
-          {
-            id: 'inst_2',
-            name: '2. Taksit (Rapor Teslimi - %50)',
-            percentage: 50,
-            amount: 138000,
-            isPaid: false,
-            paymentMethod: 'havale_eft',
-          },
-        ],
-        totalPaidAmount: 138000,
-        remainingAmount: 138000,
-      },
-      revisionNumber: 1,
-    },
-    {
-      id: 'demo_prop_3',
-      proposalNumber: 'TKL-2026-003',
-      type: 'orta_katli_risk',
-      title: 'Marmara İş Merkezi Orta Katlı Risk İncelemesi',
-      status: 'taslak',
-      createdAt: date3,
-      updatedAt: date3,
-      client: {
-        name: 'Marmara İş Merkezi Site Yönetimi',
-        contactPerson: 'Caner Kaya',
-        phone: '0533 555 12 34',
-        email: 'caner.kaya@marmarais.com',
-        notes: '12 katlı iş merkezi için hızlı risk değerlendirmesi talep edildi.',
-      },
-      property: {
-        city: 'İstanbul',
-        district: 'Şişli',
-        neighborhood: 'Mecidiyeköy Mah.',
-        fullAddress: 'Büyükdere Cad. No: 75, Şişli / İstanbul',
-        ada: '1088',
-        parsel: '24',
-        totalFloors: 12,
-        buildingType: 'Betonarme',
-        usagePurpose: 'İşyeri',
-        hasAsBuiltProject: 'Evet var',
-      },
-      scopeItems: DEFAULT_SCOPES.orta_katli_risk,
-      pricing: {
-        unitPrice: 28000,
-        pricingMethod: 'kat_basi',
-        subtotal: 336000,
-        vatRate: 20,
-        discount: 16000,
-        totalAmount: 384000,
-        currency: 'TL',
-      },
-      paymentTerms: {
-        advanceRatio: 50,
-        uponDeliveryRatio: 50,
-        completionWorkDays: 8,
-        validityDays: 15,
-        customNotes: 'İncelemeler mesai saatleri dışında gerçekleştirilecektir.',
-        paymentStatus: 'odeme_bekliyor',
-        fileCompleted: false,
-        installments: [
-          {
-            id: 'inst_1',
-            name: '1. Taksit (Peşinat - %50)',
-            percentage: 50,
-            amount: 192000,
-            isPaid: false,
-            paymentMethod: 'havale_eft',
-          },
-          {
-            id: 'inst_2',
-            name: '2. Taksit (Teslimat - %50)',
-            percentage: 50,
-            amount: 192000,
-            isPaid: false,
-            paymentMethod: 'havale_eft',
-          },
-        ],
-        totalPaidAmount: 0,
-        remainingAmount: 384000,
-      },
-      revisionNumber: 1,
-    },
-  ];
+  return INITIAL_PROPOSALS;
 }
