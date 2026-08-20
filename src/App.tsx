@@ -8,7 +8,8 @@ import {
   getCompanyProfile, 
   saveCompanyProfile, 
   createEmptyProposal,
-  getProposalPaymentSummary
+  getInitialMockProposals,
+  saveProposals
 } from './utils/storage';
 
 import { Header } from './components/Header';
@@ -23,11 +24,13 @@ import { exportProposalsToExcel } from './utils/excelExport';
 import { 
   testFirestoreConnection, 
   subscribeProposalsFromCloud, 
-  fetchCompanyProfileFromCloud, 
-  fetchProposalsFromCloud,
-  mergeProposals,
+  subscribeCompanyProfileFromCloud,
   syncSaveProposalToCloud, 
-  syncSaveCompanyProfileToCloud 
+  syncDeleteProposalFromCloud,
+  syncBatchSaveProposalsToCloud,
+  syncSaveCompanyProfileToCloud,
+  fetchProposalsFromCloud,
+  fetchCompanyProfileFromCloud
 } from './firebase';
 
 export default function App() {
@@ -55,53 +58,71 @@ export default function App() {
     setIsAuthenticated(false);
   };
 
-  // Test Firestore Connection & Setup Realtime Sync
+  // =========================================================================
+  // REAL-TIME FIRESTORE SUBSCRIPTIONS (Live updates across all devices)
+  // =========================================================================
   useEffect(() => {
+    // 1. Connection check
     testFirestoreConnection().then((connected) => {
       if (connected) {
         setIsCloudSynced(true);
       }
     });
 
-    // Hydrate Company Profile from Cloud
-    fetchCompanyProfileFromCloud().then((cloudProfile) => {
+    // 2. Real-time Listener for Company Profile
+    const unsubCompany = subscribeCompanyProfileFromCloud((cloudProfile) => {
       if (cloudProfile && cloudProfile.name) {
         setCompanyProfile(cloudProfile);
         localStorage.setItem('bina_teklif_company_v1', JSON.stringify(cloudProfile));
-      } else {
-        // Sync local default profile to cloud if cloud is empty
+      }
+    });
+
+    // If cloud profile is missing on first boot, sync local defaults up
+    fetchCompanyProfileFromCloud().then((cloudProf) => {
+      if (!cloudProf || !cloudProf.name) {
         const localProf = getCompanyProfile();
         syncSaveCompanyProfileToCloud(localProf).catch(() => {});
       }
     });
 
-    // Realtime Listener for Proposals from Firestore Cloud with Smart Merge
-    const unsubscribe = subscribeProposalsFromCloud((cloudList) => {
-      const localList = getProposals();
-      const merged = mergeProposals(localList, cloudList || []);
-      if (merged.length > 0) {
-        setProposals(merged);
-        localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(merged));
+    // 3. Real-time Listener for Proposals (onSnapshot)
+    const unsubProposals = subscribeProposalsFromCloud((cloudList, isSnapshotEmpty) => {
+      if (!isSnapshotEmpty && cloudList.length > 0) {
+        // Cloud has active proposals -> Cloud is the single real-time source of truth!
+        setProposals(cloudList);
+        saveProposals(cloudList);
         setIsCloudSynced(true);
-        
-        // Background sync any local proposals to cloud if cloud is missing them
-        if (cloudList && cloudList.length < merged.length) {
-          merged.forEach((p) => {
-            syncSaveProposalToCloud(p).catch(() => {});
+      } else if (isSnapshotEmpty) {
+        // Cloud collection is currently empty
+        const cachedLocal = getProposals();
+        if (cachedLocal.length > 0) {
+          // Upload local proposals (e.g. user's 14 proposals) to Firestore so all devices can see them!
+          syncBatchSaveProposalsToCloud(cachedLocal).then(() => {
+            setIsCloudSynced(true);
+          });
+        } else {
+          // Brand new installation with 0 items: seed initial mock proposals to Firestore
+          const initialMocks = getInitialMockProposals();
+          setProposals(initialMocks);
+          saveProposals(initialMocks);
+          syncBatchSaveProposalsToCloud(initialMocks).then(() => {
+            setIsCloudSynced(true);
           });
         }
       }
     });
 
     return () => {
-      unsubscribe();
+      unsubCompany();
+      unsubProposals();
     };
   }, []);
 
-  // Save Company Profile updates
-  const handleSaveCompany = (updated: CompanyProfile) => {
-    saveCompanyProfile(updated);
+  // Save Company Profile updates in Real-Time
+  const handleSaveCompany = async (updated: CompanyProfile) => {
     setCompanyProfile(updated);
+    saveCompanyProfile(updated);
+    await syncSaveCompanyProfileToCloud(updated);
   };
 
   // Start creating a new proposal
@@ -118,47 +139,66 @@ export default function App() {
     setActiveTab('form');
   };
 
-  // Save proposal from form
-  const handleSaveProposal = (updated: Proposal, previewAfterSave: boolean = false) => {
-    saveProposal(updated);
-    const updatedList = getProposals();
-    setProposals(updatedList);
+  // Save proposal from form (Real-time Firestore push)
+  const handleSaveProposal = async (updated: Proposal, previewAfterSave: boolean = false) => {
+    const updatedProposal: Proposal = {
+      ...updated,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Optimistic local state update
+    setProposals((prev) => {
+      const idx = prev.findIndex((p) => p.id === updatedProposal.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = updatedProposal;
+        return next;
+      }
+      return [updatedProposal, ...prev];
+    });
+
+    // Save to Firestore (broadcasts immediately to all devices)
+    saveProposal(updatedProposal);
 
     if (previewAfterSave) {
-      setPreviewProposal(updated);
+      setPreviewProposal(updatedProposal);
       setPreviewModalOpen(true);
     } else {
       setActiveTab('list');
     }
   };
 
-  // Duplicate / Revise
+  // Duplicate / Revise (Real-time Firestore push)
   const handleDuplicateProposal = (id: string) => {
     const copy = duplicateProposal(id);
     if (copy) {
-      const updatedList = getProposals();
-      setProposals(updatedList);
+      setProposals((prev) => [copy, ...prev]);
     }
   };
 
-  // Delete
-  const handleDeleteProposal = (id: string) => {
+  // Delete (Real-time Firestore delete)
+  const handleDeleteProposal = async (id: string) => {
+    // Optimistic UI removal
+    setProposals((prev) => prev.filter((p) => p.id !== id));
     deleteProposal(id);
-    setProposals(getProposals());
   };
 
-  // Quick Status change
-  const handleStatusChange = (id: string, newStatus: ProposalStatus) => {
+  // Quick Status change (Real-time Firestore update)
+  const handleStatusChange = async (id: string, newStatus: ProposalStatus) => {
     const found = proposals.find((p) => p.id === id);
     if (found) {
-      const updated = { ...found, status: newStatus };
+      const updated: Proposal = { 
+        ...found, 
+        status: newStatus,
+        updatedAt: new Date().toISOString()
+      };
+      setProposals((prev) => prev.map((p) => (p.id === id ? updated : p)));
       saveProposal(updated);
-      setProposals(getProposals());
     }
   };
 
-  // Quick Payment Status change
-  const handlePaymentStatusChange = (id: string, newPaymentStatus: PaymentStatus) => {
+  // Quick Payment Status change (Real-time Firestore update)
+  const handlePaymentStatusChange = async (id: string, newPaymentStatus: PaymentStatus) => {
     const found = proposals.find((p) => p.id === id);
     if (found) {
       const isWithoutVat = Boolean(found.pricing?.isWithoutVat || found.pricing?.invoiceType === 'faturasiz' || found.pricing?.vatRate === 0);
@@ -194,8 +234,9 @@ export default function App() {
         },
         updatedAt: new Date().toISOString(),
       };
+
+      setProposals((prev) => prev.map((p) => (p.id === id ? updated : p)));
       saveProposal(updated);
-      setProposals(getProposals());
     }
   };
 
@@ -233,7 +274,7 @@ export default function App() {
   // Backup Data Export JSON
   const handleExportData = () => {
     const data = {
-      version: '1.0',
+      version: '2.0',
       exportedAt: new Date().toISOString(),
       companyProfile,
       proposals,
@@ -247,7 +288,7 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  // Backup Data Import JSON
+  // Backup Data Import JSON & Firestore Sync
   const handleImportData = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -256,20 +297,22 @@ export default function App() {
       const file = e.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const parsed = JSON.parse(event.target?.result as string);
           if (parsed.proposals && Array.isArray(parsed.proposals)) {
-            localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(parsed.proposals));
             setProposals(parsed.proposals);
+            saveProposals(parsed.proposals);
+            await syncBatchSaveProposalsToCloud(parsed.proposals);
           }
           if (parsed.companyProfile) {
-            saveCompanyProfile(parsed.companyProfile);
             setCompanyProfile(parsed.companyProfile);
+            saveCompanyProfile(parsed.companyProfile);
+            await syncSaveCompanyProfileToCloud(parsed.companyProfile);
           }
-          alert('Teklifler ve firma verileri başarıyla yüklendi!');
+          alert('✅ Teklifler ve firma verileri başarıyla Firestore buluta ve uygulamaya yüklendi!');
         } catch (err) {
-          alert('Geçersiz yedek dosyası formatı!');
+          alert('⚠️ Geçersiz yedek dosyası formatı!');
         }
       };
       reader.readAsText(file);
@@ -277,38 +320,35 @@ export default function App() {
     input.click();
   };
 
-  // Manual Cloud Refresh & Two-Way Sync
+  // Manual Force-Refresh & Push/Pull from Cloud
   const handleRefreshCloud = async () => {
     try {
-      const localList = getProposals();
       const [cloudList, cloudProfile] = await Promise.all([
         fetchProposalsFromCloud(),
         fetchCompanyProfileFromCloud(),
       ]);
 
-      const merged = mergeProposals(localList, cloudList || []);
+      if (cloudList && cloudList.length > 0) {
+        setProposals(cloudList);
+        saveProposals(cloudList);
+      } else {
+        // If cloud was empty, push local state to cloud
+        const local = getProposals();
+        if (local.length > 0) {
+          await syncBatchSaveProposalsToCloud(local);
+        }
+      }
 
-      // 1. Save merged state to local storage & state
-      setProposals(merged);
-      localStorage.setItem('bina_teklif_proposals_v1', JSON.stringify(merged));
-
-      // 2. Upload all proposals to Firestore to ensure full synchronization
-      await Promise.all(merged.map((p) => syncSaveProposalToCloud(p)));
-
-      // 3. Sync Company profile
       if (cloudProfile && cloudProfile.name) {
         setCompanyProfile(cloudProfile);
         localStorage.setItem('bina_teklif_company_v1', JSON.stringify(cloudProfile));
-      } else {
-        const localProf = getCompanyProfile();
-        await syncSaveCompanyProfileToCloud(localProf);
       }
 
       setIsCloudSynced(true);
-      alert(`✅ Bulut Senkronizasyonu Başarılı!\n\nFirestore bulut veritabanı ile çift yönlü eşitleme yapıldı.\nToplam ${merged.length} adet teklif tüm cihazlarınızla senkronize edildi.`);
+      alert(`✅ Canlı Bulut Bağlantısı Aktif!\n\nFirestore veritabanı ile tüm cihazlarınız anlık senkronizedir.\nToplam ${proposals.length} adet teklif canlı izlenmektedir.`);
     } catch (e: any) {
       console.warn('Manual cloud refresh error:', e);
-      alert(`⚠️ Bulut Bağlantı Uyarısı:\n\n${e?.message || 'Bulut veritabanına bağlanırken bir sorun oluştu.'}\nLütfen firebase-applet-config.json dosyasının GitHub projenizde olduğundan emin olun.`);
+      alert(`⚠️ Bulut Durumu: Çevrimdışı veya bağlantı bekleniyor.\n(${e?.message || 'Bağlantı hatası'})`);
     }
   };
 

@@ -29,7 +29,7 @@ export function getCompanyProfile(): CompanyProfile {
 export function saveCompanyProfile(profile: CompanyProfile): void {
   try {
     localStorage.setItem(COMPANY_KEY, JSON.stringify(profile));
-    // Asynchronously sync to Firebase Firestore
+    // Push immediately to Firestore
     syncSaveCompanyProfileToCloud(profile).catch((err) => {
       console.warn('Could not sync company profile to cloud:', err);
     });
@@ -43,58 +43,28 @@ export function getProposals(): Proposal[] {
     const saved = localStorage.getItem(PROPOSALS_KEY);
     if (saved) {
       const parsed: Proposal[] = JSON.parse(saved);
-      // Clean up and ensure Istanbul proposals have valid districts/neighborhoods
-      let modified = false;
-      const cleaned = parsed.map((p) => {
-        if (!p.property) return p;
-        if (p.property.city?.toLowerCase().includes('istanbul')) {
-          let dist = p.property.district;
-          if (dist === 'Karaköy / Beyoğlu') {
-            dist = 'Beyoğlu';
-            modified = true;
-          }
-          if (!dist) {
-            dist = 'Kadıköy';
-            modified = true;
-          }
-          return {
-            ...p,
-            property: {
-              ...p.property,
-              city: 'İstanbul',
-              district: dist,
-              neighborhood: p.property.neighborhood || 'Göztepe Mah.',
-            },
-          };
-        }
-        return p;
-      });
-      if (modified) {
-        saveProposals(cleaned);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
       }
-      return cleaned;
     }
   } catch (e) {
-    console.error('Error loading proposals:', e);
+    console.error('Error loading proposals from cache:', e);
   }
-  // If empty, initialize with mock proposals for a great first-time demo
-  const initial = getInitialMockProposals();
-  saveProposals(initial);
-  return initial;
+  return [];
 }
 
 export function saveProposals(proposals: Proposal[]): void {
   try {
     localStorage.setItem(PROPOSALS_KEY, JSON.stringify(proposals));
   } catch (e) {
-    console.error('Error saving proposals:', e);
+    console.error('Error caching proposals:', e);
   }
 }
 
 export function saveProposal(proposal: Proposal): void {
   const proposals = getProposals();
   const existingIndex = proposals.findIndex((p) => p.id === proposal.id);
-  const updatedProposal = {
+  const updatedProposal: Proposal = {
     ...proposal,
     updatedAt: new Date().toISOString(),
   };
@@ -106,9 +76,9 @@ export function saveProposal(proposal: Proposal): void {
   }
   saveProposals(proposals);
 
-  // Asynchronously sync to Firebase Firestore
+  // Directly push to Firestore for real-time live distribution to all devices
   syncSaveProposalToCloud(updatedProposal).catch((err) => {
-    console.warn('Could not sync proposal to cloud:', err);
+    console.warn('Could not sync proposal to Firestore:', err);
   });
 }
 
@@ -116,9 +86,9 @@ export function deleteProposal(id: string): void {
   const proposals = getProposals().filter((p) => p.id !== id);
   saveProposals(proposals);
 
-  // Asynchronously remove from Firebase Firestore
+  // Directly remove from Firestore for real-time live removal on all devices
   syncDeleteProposalFromCloud(id).catch((err) => {
-    console.warn('Could not delete proposal from cloud:', err);
+    console.warn('Could not delete proposal from Firestore:', err);
   });
 }
 
@@ -129,8 +99,6 @@ export function duplicateProposal(id: string): Proposal | null {
 
   const newRevisionNumber = (target.revisionNumber || 1) + 1;
   const now = new Date();
-  const year = now.getFullYear();
-  const randomSuffix = Math.floor(100 + Math.random() * 900);
 
   const copy: Proposal = {
     ...JSON.parse(JSON.stringify(target)),
@@ -183,7 +151,6 @@ export function getProposalPaymentSummary(proposal: Proposal): {
   } else if (typeof proposal.paymentTerms?.totalPaidAmount === 'number') {
     totalPaid = proposal.paymentTerms.totalPaidAmount;
   } else {
-    // Infer based on paymentStatus if not explicit
     const currentStatus = proposal.paymentTerms?.paymentStatus || 'odeme_bekliyor';
     if (currentStatus === 'tamami_odendi') {
       totalPaid = grandTotal;
@@ -205,7 +172,7 @@ export function getProposalPaymentSummary(proposal: Proposal): {
     proposal.paymentTerms?.paymentStatus === 'tamami_odendi'
   );
 
-  let paymentStatus = proposal.paymentTerms?.paymentStatus || 'odeme_bekliyor';
+  const paymentStatus = proposal.paymentTerms?.paymentStatus || 'odeme_bekliyor';
 
   return {
     grandTotal,
@@ -322,7 +289,7 @@ export function createEmptyProposal(type: ProposalType): Proposal {
   };
 }
 
-function getInitialMockProposals(): Proposal[] {
+export function getInitialMockProposals(): Proposal[] {
   const now = new Date();
   const date1 = new Date(now.getTime() - 86400000 * 1).toISOString();
   const date2 = new Date(now.getTime() - 86400000 * 3).toISOString();

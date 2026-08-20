@@ -137,15 +137,24 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Cloud Status / Sync Action Button (Always Visible on Desktop) */}
             <button 
               onClick={handleManualRefresh}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border shadow-sm transition cursor-pointer hover:scale-105 active:scale-95 ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border shadow-sm transition cursor-pointer hover:scale-105 active:scale-95 ${
                 isCloudSynced 
-                  ? 'bg-emerald-950/70 border-emerald-500 text-emerald-300 hover:bg-emerald-900' 
-                  : 'bg-amber-950/70 border-amber-500 text-amber-300 hover:bg-amber-900'
+                  ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 hover:bg-emerald-900' 
+                  : 'bg-amber-950/80 border-amber-500/80 text-amber-300 hover:bg-amber-900'
               }`}
-              title="Tüm cihazlarla anlık eşitlemek için tıklayın"
+              title="Firestore canlı bağlantısı aktif. Tüm cihazlarınızla anında eşitlenir. Yeniden sorgulamak için tıklayın."
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-amber-300' : isCloudSynced ? 'text-emerald-400' : 'text-amber-400 animate-pulse'}`} />
-              <span>{isRefreshing ? 'Eşitleniyor...' : isCloudSynced ? 'Bulut Eşitle' : 'Buluta Bağlan'}</span>
+              {isRefreshing ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+              ) : isCloudSynced ? (
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              ) : (
+                <span className="inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse"></span>
+              )}
+              <span>{isRefreshing ? 'Eşitleniyor...' : isCloudSynced ? 'Canlı Bulut' : 'Bağlanıyor...'}</span>
             </button>
 
             <button
@@ -204,15 +213,24 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Mobile Cloud Sync Button (Always on Phone Topbar) */}
             <button
               onClick={handleManualRefresh}
-              className={`p-2 rounded-lg border text-xs font-semibold flex items-center gap-1 transition ${
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition ${
                 isCloudSynced
-                  ? 'bg-emerald-950/70 border-emerald-600 text-emerald-300'
-                  : 'bg-amber-950/70 border-amber-600 text-amber-300'
+                  ? 'bg-emerald-950/80 border-emerald-600/80 text-emerald-300'
+                  : 'bg-amber-950/80 border-amber-600/80 text-amber-300'
               }`}
-              title="Bulut Verilerini Eşitle"
+              title="Firestore Canlı Bulut Bağlantısı"
             >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-amber-300' : 'text-emerald-400'}`} />
-              <span className="text-[11px] font-bold">Bulut</span>
+              {isRefreshing ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+              ) : isCloudSynced ? (
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              ) : (
+                <span className="inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse"></span>
+              )}
+              <span className="text-[11px] font-bold">{isCloudSynced ? 'Canlı' : 'Bulut'}</span>
             </button>
 
             <button
