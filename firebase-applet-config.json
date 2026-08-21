@@ -1,12 +1,9 @@
 {
-  "projectId": "gen-lang-client-0056806185",
-  "appId": "1:604025085359:web:adef01c5e88a4cf10f635a",
-  "apiKey": "AIzaSyAdMJJx1hFE0Z_wMMKKf60yo-EEkT0h74w",
-  "authDomain": "gen-lang-client-0056806185.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-binarisktespitit-02697716-53b7-4265-8502-0c42e2e179df",
-  "storageBucket": "gen-lang-client-0056806185.firebasestorage.app",
-  "messagingSenderId": "604025085359",
-  "measurementId": "",
-  "oAuthClientId": "604025085359-q70rkbb1dmvft9f27sh5ls51sajqisec.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "apiKey": "AIzaSyDy3g4iKuqUFJRvvrLEQ0W5NARAHVNBfH0",
+  "authDomain": "iska-teklif.firebaseapp.com",
+  "projectId": "iska-teklif",
+  "storageBucket": "iska-teklif.firebasestorage.app",
+  "messagingSenderId": "32999767490",
+  "appId": "1:32999767490:web:8867461a49f7baa2422a5b",
+  "measurementId": "G-4BLG4S6X3W"
 }
