@@ -511,7 +511,17 @@ ${companyProfile.name}
                         {/* Sol: Standart Şartlar */}
                         <div className="md:col-span-7 bg-slate-50 border border-slate-300 rounded-xl p-4 space-y-2 text-xs text-slate-900">
                           <p className="leading-snug">
-                            <strong>1.</strong> Ödeme cetveli <strong>İş başlangıcında %50</strong>, <strong>Avan proje tesliminde %50</strong> olarak yapılacaktır.
+                            <strong>1.</strong> Ödeme Koşulları:{' '}
+                            {proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0 ? (
+                              proposal.paymentTerms.installments.map((inst, idx) => (
+                                <span key={inst.id || idx}>
+                                  {idx > 0 ? ', ' : ''}
+                                  {inst.name || `${idx + 1}. Taksit`} (<strong>%{inst.percentage}</strong> - ₺{(inst.amount || 0).toLocaleString('tr-TR')})
+                                </span>
+                              ))
+                            ) : (
+                              <>Ödeme cetveli <strong>İş başlangıcında %50</strong>, <strong>Avan proje tesliminde %50</strong> olarak yapılacaktır.</>
+                            )}
                           </p>
                           <p className="leading-snug">
                             <strong>2.</strong> Fiyatlarımıza KDV dahil değildir.
@@ -595,6 +605,9 @@ ${companyProfile.name}
                         <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-300 text-right flex flex-col items-end">
                           <p className="font-bold text-blue-950 uppercase text-[11px] mb-0.5">İŞVEREN / MÜŞTERİ</p>
                           <p className="font-bold text-slate-900 text-[11px]">{proposal.client.name}</p>
+                          {proposal.client.contactPerson && (
+                            <p className="text-[10px] font-semibold text-slate-700 mt-0.5">Muhatap: {proposal.client.contactPerson}</p>
+                          )}
                           <p className="text-[10px] text-slate-600">Teklif Kabul & Onay</p>
                           <div className="mt-8 border-b border-slate-400 w-36"></div>
                           <p className="text-[10px] text-slate-500 mt-1">İmza & Tarih</p>
@@ -1004,8 +1017,29 @@ ${companyProfile.name}
                       </p>
                     </div>
 
-                    <div className="text-xs font-bold text-slate-900 mt-12">
+                    <div className="text-xs font-bold text-slate-900 mt-6 mb-3">
                       Saygılarımızla,
+                    </div>
+
+                    <div className="border-t-2 border-slate-900 pt-3 grid grid-cols-2 gap-6 text-xs">
+                      <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-300">
+                        <p className="font-bold text-slate-950 uppercase text-[11px] mb-0.5">TEKLİF VEREN KURULUŞ</p>
+                        <p className="font-bold text-slate-900 text-[11px]">{companyProfile.name}</p>
+                        <p className="text-[10px] text-slate-600">{companyProfile.title || 'Mühendislik ve Mimarlık Hizmetleri Ltd. Şti.'}</p>
+                        <div className="mt-8 border-b border-slate-400 w-36"></div>
+                        <p className="text-[10px] text-slate-500 mt-1">Yetkili İmza & Kaşe</p>
+                      </div>
+
+                      <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-300 text-right flex flex-col items-end">
+                        <p className="font-bold text-slate-950 uppercase text-[11px] mb-0.5">İŞVEREN / MÜŞTERİ</p>
+                        <p className="font-bold text-slate-900 text-[11px]">{proposal.client.name}</p>
+                        {proposal.client.contactPerson && (
+                          <p className="text-[10px] font-semibold text-slate-700 mt-0.5">Muhatap: {proposal.client.contactPerson}</p>
+                        )}
+                        <p className="text-[10px] text-slate-600">Teklif Kabul & Onay</p>
+                        <div className="mt-8 border-b border-slate-400 w-36"></div>
+                        <p className="text-[10px] text-slate-500 mt-1">İmza & Tarih</p>
+                      </div>
                     </div>
                   </div>
 
@@ -1381,6 +1415,9 @@ ${companyProfile.name}
                     <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-right flex flex-col items-end">
                       <p className="font-bold text-emerald-950 uppercase mb-1">İŞVEREN / MÜŞTERİ</p>
                       <p className="text-[11px] font-semibold text-slate-800">{proposal.client.name}</p>
+                      {proposal.client.contactPerson && (
+                        <p className="text-[10px] font-semibold text-slate-700 mt-0.5">Muhatap: {proposal.client.contactPerson}</p>
+                      )}
                       <p className="text-[10px] text-slate-500">Adı Soyadı / Ünvanı</p>
                       <div className="mt-8 border-b border-slate-400 w-36"></div>
                       <p className="text-[10px] text-slate-400 mt-1">İmza & Tarih</p>
@@ -1622,7 +1659,17 @@ ${companyProfile.name}
                       <ul className="space-y-1.5 text-xs text-slate-800 list-disc pl-4">
                         <li>Tablo 1'de bahsi geçen işlemler yapılıp dosya halinde resmî kuruma sunulacaktır.</li>
                         <li>
-                          <strong>Ödeme Şekli:</strong> Numune için gün belirlendiğinde ödemenin <strong>%30'u</strong>, Numune alındığı gün ödemenin <strong>%30'u</strong>, belediye/resmî kurum raporu onayladığında kalan <strong>%40'ı</strong> alınacaktır.
+                          <strong>Ödeme Şekli:</strong>{' '}
+                          {proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0 ? (
+                            proposal.paymentTerms.installments.map((inst, idx) => (
+                              <span key={inst.id || idx}>
+                                {idx > 0 ? ', ' : ''}
+                                {inst.name || `${idx + 1}. Taksit`} (<strong>%{inst.percentage}</strong> - ₺{(inst.amount || 0).toLocaleString('tr-TR')})
+                              </span>
+                            ))
+                          ) : (
+                            <>Numune için gün belirlendiğinde ödemenin <strong>%30'u</strong>, Numune alındığı gün ödemenin <strong>%30'u</strong>, belediye/resmî kurum raporu onayladığında kalan <strong>%40'ı</strong> alınacaktır.</>
+                          )}
                         </li>
                       </ul>
                     </div>
@@ -1734,6 +1781,9 @@ ${companyProfile.name}
                       <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-300 text-right flex flex-col items-end">
                         <p className="font-bold text-blue-950 uppercase mb-1">MÜŞTERİ / YAPI SAHİBİ</p>
                         <p className="text-[11px] font-semibold text-slate-800">{proposal.client.name}</p>
+                        {proposal.client.contactPerson && (
+                          <p className="text-[10px] font-semibold text-slate-700 mt-0.5">Muhatap: {proposal.client.contactPerson}</p>
+                        )}
                         <p className="text-[10px] text-slate-500">Kabul Ve Onay</p>
                         <div className="mt-8 border-b border-slate-400 w-36"></div>
                         <p className="text-[10px] text-slate-400 mt-1">İmza & Tarih</p>

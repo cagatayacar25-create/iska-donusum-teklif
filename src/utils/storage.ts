@@ -199,26 +199,74 @@ export function getProposalPaymentSummary(proposal: Proposal): {
   };
 }
 
-export function generateDefaultInstallments(grandTotal: number, advanceRatio: number = 50): PaymentInstallment[] {
-  const advPercent = advanceRatio > 0 && advanceRatio < 100 ? advanceRatio : 50;
-  const remainPercent = 100 - advPercent;
-  const firstAmount = Math.round(grandTotal * (advPercent / 100));
-  const secondAmount = Math.max(0, grandTotal - firstAmount);
+export function generateDefaultInstallments(type: ProposalType, grandTotal: number, advanceRatio?: number): PaymentInstallment[] {
+  if (type === 'statik_guclendirme') {
+    const advPercent = advanceRatio && advanceRatio > 0 && advanceRatio < 100 ? advanceRatio : 50;
+    const remainPercent = 100 - advPercent;
+    const firstAmount = Math.round(grandTotal * (advPercent / 100));
+    const secondAmount = Math.max(0, grandTotal - firstAmount);
+
+    return [
+      {
+        id: 'inst_1',
+        name: `1. Taksit (İş Başlangıcı / Peşinat - %${advPercent})`,
+        percentage: advPercent,
+        amount: firstAmount,
+        isPaid: false,
+        paymentMethod: 'havale_eft',
+      },
+      {
+        id: 'inst_2',
+        name: `2. Taksit (Avan / Detay Proje Teslimi - %${remainPercent})`,
+        percentage: remainPercent,
+        amount: secondAmount,
+        isPaid: false,
+        paymentMethod: 'havale_eft',
+      },
+    ];
+  }
+
+  // Riskli Yapı, Orta Katlı Risk ve Performans Raporu için %30 - %30 - %40 taksit planı
+  const inst1Amount = Math.round(grandTotal * 0.30);
+  const inst2Amount = Math.round(grandTotal * 0.30);
+  const inst3Amount = Math.max(0, grandTotal - inst1Amount - inst2Amount);
+
+  let name1 = '1. Taksit (Randevu / Ön Ödeme - %30)';
+  let name2 = '2. Taksit (Numune Alımı / Saha Sonu - %30)';
+  let name3 = '3. Taksit (Rapor / Onay Teslimi - %40)';
+
+  if (type === 'riskli_yapi' || type === 'orta_katli_risk') {
+    name1 = '1. Taksit (Numune Günü Belirlendiğinde - %30)';
+    name2 = '2. Taksit (Numuneler Alındığı Gün - %30)';
+    name3 = '3. Taksit (Resmî/Belediye Rapor Onayı - %40)';
+  } else if (type === 'performans_raporu') {
+    name1 = '1. Taksit (İş Başlangıcı / Randevu - %30)';
+    name2 = '2. Taksit (Saha Numuneleri Alımı - %30)';
+    name3 = '3. Taksit (Performans Rapor Teslimi - %40)';
+  }
 
   return [
     {
       id: 'inst_1',
-      name: `1. Taksit (Peşinat / Başlangıç - %${advPercent})`,
-      percentage: advPercent,
-      amount: firstAmount,
+      name: name1,
+      percentage: 30,
+      amount: inst1Amount,
       isPaid: false,
       paymentMethod: 'havale_eft',
     },
     {
       id: 'inst_2',
-      name: `2. Taksit (Dosya / Rapor Teslimi - %${remainPercent})`,
-      percentage: remainPercent,
-      amount: secondAmount,
+      name: name2,
+      percentage: 30,
+      amount: inst2Amount,
+      isPaid: false,
+      paymentMethod: 'havale_eft',
+    },
+    {
+      id: 'inst_3',
+      name: name3,
+      percentage: 40,
+      amount: inst3Amount,
       isPaid: false,
       paymentMethod: 'havale_eft',
     },
@@ -238,7 +286,7 @@ export function createEmptyProposal(type: ProposalType): Proposal {
     : (defaultPricingMethod === 'kat_basi' ? defaultUnitPrice * defaultFloors : defaultUnitPrice);
   const vatRate = 20;
   const totalAmount = Math.round(subtotal * (1 + vatRate / 100));
-  const defaultAdvanceRatio = 50;
+  const defaultAdvanceRatio = isGuclendirme ? 50 : 30;
 
   return {
     id: 'prop_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -256,7 +304,7 @@ export function createEmptyProposal(type: ProposalType): Proposal {
     updatedAt: now,
     client: {
       name: isGuclendirme ? 'Kopuzlar San.A.Ş.' : 'Yılmaz Apartmanı Yönetimi',
-      contactPerson: isGuclendirme ? 'Fabrika / Tesis Yönetimi' : 'Ahmet Yılmaz (Yönetici)',
+      contactPerson: 'Çağatay Acar',
       phone: '0533 123 45 67',
       email: isGuclendirme ? 'info@kopuzlar.com' : 'ahmet.yilmaz@gmail.com',
       notes: isGuclendirme ? '2018 TBDY kapsamında Avan ve Detay Güçlendirme Projesi' : 'Bina sakinleri karot alımı konusunda bilgilendirildi.',
@@ -292,10 +340,12 @@ export function createEmptyProposal(type: ProposalType): Proposal {
       validityDays: 15,
       customNotes: isGuclendirme 
         ? 'İş başlangıcında %50, Avan proje tesliminde %50 olarak ödenecektir.'
-        : 'Saha incelemesi esnasında elektrik ve su imkanı sağlanmalıdır.',
+        : (type === 'performans_raporu'
+          ? 'İş başlangıcında %30, saha numuneleri alımında %30, performans rapor tesliminde %40 tahsil edilecektir.'
+          : 'Numune için gün belirlendiğinde %30, numune alındığı gün %30, resmî/belediye rapor onayında %40 tahsil edilecektir.'),
       paymentStatus: 'odeme_bekliyor',
       fileCompleted: false,
-      installments: generateDefaultInstallments(totalAmount, defaultAdvanceRatio),
+      installments: generateDefaultInstallments(type, totalAmount, defaultAdvanceRatio),
       totalPaidAmount: 0,
       remainingAmount: totalAmount,
     },

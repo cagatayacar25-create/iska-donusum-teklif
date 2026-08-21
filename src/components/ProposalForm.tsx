@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Proposal, ProposalType, ScopeItem, GuclendirmeParams, PaymentStatus, PaymentInstallment } from '../types';
 import { PROPOSAL_TYPE_LABELS, DEFAULT_SCOPES, DEFAULT_GUCLENDIRME_PARAMS, PAYMENT_STATUS_LABELS } from '../data/defaultTemplates';
+import { generateDefaultInstallments } from '../utils/storage';
 import { CITIES, ISTANBUL_DISTRICTS, ISTANBUL_NEIGHBORHOODS } from '../data/istanbulData';
 import { 
   Building2, 
@@ -23,7 +24,8 @@ import {
   Clock,
   CheckCircle2,
   FolderCheck,
-  Calendar
+  Calendar,
+  RotateCcw
 } from 'lucide-react';
 
 interface ProposalFormProps {
@@ -1022,20 +1024,36 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Muhatap / Yetkili Kişi
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Müşteri Muhatap / Yetkili Kişi
+                  </label>
+                  {formData.client.contactPerson !== 'Çağatay Acar' && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          client: { ...formData.client, contactPerson: 'Çağatay Acar' },
+                        })
+                      }
+                      className="text-[10px] font-bold text-amber-700 hover:text-amber-900 hover:underline"
+                    >
+                      'Çağatay Acar' Yap
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
-                  value={formData.client.contactPerson}
+                  value={formData.client.contactPerson ?? 'Çağatay Acar'}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
                       client: { ...formData.client, contactPerson: e.target.value },
                     })
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
-                  placeholder="Örn: Ahmet Yılmaz (Bina Yöneticisi)"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                  placeholder="Çağatay Acar"
                 />
               </div>
             </div>
@@ -2194,286 +2212,410 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
 
             {/* Tahsilat ve Ödeme Takip Masası (İş Akışı) */}
             <div className="pt-6 border-t-2 border-slate-200 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-700 flex items-center justify-center">
-                    <CreditCard className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-extrabold text-slate-900">
-                      Ödeme ve Tahsilat Takip Masası
-                    </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Taksit ödemeleri, peşinat ve dosya teslimat aşamalarını buradan yönetin
-                    </p>
-                  </div>
-                </div>
+              {(() => {
+                const calculatedSubtotal = Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0));
+                const calculatedTotal = formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
+                  ? calculatedSubtotal
+                  : Math.round(calculatedSubtotal * (1 + (formData.pricing.vatRate || 20) / 100));
 
-                {/* Dosya Bitti Checkbox */}
-                <label className="inline-flex items-center gap-2 cursor-pointer bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 transition">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(formData.paymentTerms.fileCompleted || formData.paymentTerms.paymentStatus === 'dosya_bitti_odeme_bekliyor')}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setFormData({
-                        ...formData,
-                        paymentTerms: {
-                          ...formData.paymentTerms,
-                          fileCompleted: checked,
-                          paymentStatus: checked && formData.paymentTerms.paymentStatus !== 'tamami_odendi'
-                            ? 'dosya_bitti_odeme_bekliyor'
-                            : formData.paymentTerms.paymentStatus || 'odeme_bekliyor',
-                        },
-                      });
-                    }}
-                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
-                  />
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                    <FolderCheck className="w-3.5 h-3.5 text-amber-600" />
-                    Dosya / Rapor Bitti
-                  </span>
-                </label>
-              </div>
+                const installments = formData.paymentTerms.installments && formData.paymentTerms.installments.length > 0
+                  ? formData.paymentTerms.installments
+                  : generateDefaultInstallments(formData.type, calculatedTotal, formData.paymentTerms.advanceRatio);
 
-              {/* 5 Big Action Buttons for Payment Status */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-                {(['odeme_bekliyor', 'ilk_taksit_odendi', 'ara_odeme_odendi', 'dosya_bitti_odeme_bekliyor', 'tamami_odendi'] as PaymentStatus[]).map((st) => {
-                  const info = PAYMENT_STATUS_LABELS[st];
-                  const isSelected = (formData.paymentTerms.paymentStatus || 'odeme_bekliyor') === st;
+                const totalPaid = installments
+                  .filter((i) => i.isPaid)
+                  .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+                const remaining = Math.max(0, calculatedTotal - totalPaid);
+                const totalPct = installments.reduce((sum, i) => sum + (Number(i.percentage) || 0), 0);
+                const totalInstAmount = installments.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
 
-                  return (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => {
-                        const calculatedSubtotal = Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0));
-                        const calculatedTotal = formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
-                          ? calculatedSubtotal
-                          : Math.round(calculatedSubtotal * (1 + (formData.pricing.vatRate || 20) / 100));
-
-                        let newPaid = 0;
-                        if (st === 'tamami_odendi') {
-                          newPaid = calculatedTotal;
-                        } else if (st === 'ilk_taksit_odendi' || st === 'dosya_bitti_odeme_bekliyor') {
-                          newPaid = Math.round(calculatedTotal * ((formData.paymentTerms.advanceRatio || 50) / 100));
-                        } else if (st === 'ara_odeme_odendi') {
-                          newPaid = Math.round(calculatedTotal * 0.75);
-                        }
-
-                        // Update installments isPaid states
-                        const updatedInst = (formData.paymentTerms.installments || []).map((inst, idx) => {
-                          if (st === 'tamami_odendi') return { ...inst, isPaid: true };
-                          if (st === 'odeme_bekliyor') return { ...inst, isPaid: false };
-                          if (idx === 0) return { ...inst, isPaid: true };
-                          return inst;
-                        });
-
-                        setFormData({
-                          ...formData,
-                          paymentTerms: {
-                            ...formData.paymentTerms,
-                            paymentStatus: st,
-                            fileCompleted: st === 'dosya_bitti_odeme_bekliyor' ? true : formData.paymentTerms.fileCompleted,
-                            totalPaidAmount: newPaid,
-                            remainingAmount: Math.max(0, calculatedTotal - newPaid),
-                            installments: updatedInst.length > 0 ? updatedInst : formData.paymentTerms.installments,
-                          },
-                        });
-                      }}
-                      className={`p-3 rounded-xl border text-left transition flex flex-col justify-between gap-1.5 ${
-                        isSelected 
-                          ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500/20 shadow-sm' 
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className={`w-2.5 h-2.5 rounded-full ${info.dot}`} />
-                        {isSelected && <CheckCircle2 className="w-4 h-4 text-amber-600" />}
-                      </div>
-                      <div className="font-extrabold text-xs text-slate-900 leading-tight">
-                        {info.label}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Installments & Payment Details Table */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    Taksit & Tahsilat Girişleri
-                  </h4>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    Ödenen taksitlerin kutucuğunu işaretleyin
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  {/* Taksit 1 */}
-                  {(() => {
-                    const calculatedSubtotal = Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0));
-                    const calculatedTotal = formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
-                      ? calculatedSubtotal
-                      : Math.round(calculatedSubtotal * (1 + (formData.pricing.vatRate || 20) / 100));
-                    const advPercent = formData.paymentTerms.advanceRatio || 50;
-                    const inst1Amount = Math.round(calculatedTotal * (advPercent / 100));
-                    const inst2Amount = Math.max(0, calculatedTotal - inst1Amount);
-                    const is1Paid = ['ilk_taksit_odendi', 'ara_odeme_odendi', 'dosya_bitti_odeme_bekliyor', 'tamami_odendi'].includes(
-                      formData.paymentTerms.paymentStatus || ''
-                    );
-                    const is2Paid = formData.paymentTerms.paymentStatus === 'tamami_odendi';
-
-                    return (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        
-                        {/* 1. Taksit Kartı */}
-                        <div className={`p-3 rounded-xl border transition ${
-                          is1Paid ? 'bg-emerald-50/60 border-emerald-300' : 'bg-white border-slate-200'
-                        }`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={is1Paid}
-                                onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  const newStatus: PaymentStatus = checked 
-                                    ? (is2Paid ? 'tamami_odendi' : 'ilk_taksit_odendi')
-                                    : 'odeme_bekliyor';
-                                  setFormData({
-                                    ...formData,
-                                    paymentTerms: {
-                                      ...formData.paymentTerms,
-                                      paymentStatus: newStatus,
-                                      totalPaidAmount: checked ? (is2Paid ? calculatedTotal : inst1Amount) : 0,
-                                      remainingAmount: checked ? (is2Paid ? 0 : inst2Amount) : calculatedTotal,
-                                    },
-                                  });
-                                }}
-                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <span className="text-xs font-extrabold text-slate-900">
-                                1. Taksit (Peşinat - %{advPercent})
-                              </span>
-                            </label>
-                            <span className="font-mono font-bold text-xs text-slate-900">
-                              ₺{inst1Amount.toLocaleString('tr-TR')}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-500">
-                            {is1Paid ? (
-                              <span className="text-emerald-700 font-bold flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5" /> 1. Taksit Tahsil Edildi
-                              </span>
-                            ) : (
-                              <span className="text-slate-500 font-medium">Ödeme Bekliyor</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* 2. Taksit Kartı */}
-                        <div className={`p-3 rounded-xl border transition ${
-                          is2Paid ? 'bg-emerald-50/60 border-emerald-300' : (
-                            formData.paymentTerms.paymentStatus === 'dosya_bitti_odeme_bekliyor'
-                              ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-400'
-                              : 'bg-white border-slate-200'
-                          )
-                        }`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={is2Paid}
-                                onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  const newStatus: PaymentStatus = checked 
-                                    ? 'tamami_odendi'
-                                    : (is1Paid ? (formData.paymentTerms.fileCompleted ? 'dosya_bitti_odeme_bekliyor' : 'ilk_taksit_odendi') : 'odeme_bekliyor');
-                                  setFormData({
-                                    ...formData,
-                                    paymentTerms: {
-                                      ...formData.paymentTerms,
-                                      paymentStatus: newStatus,
-                                      totalPaidAmount: checked ? calculatedTotal : (is1Paid ? inst1Amount : 0),
-                                      remainingAmount: checked ? 0 : (is1Paid ? inst2Amount : calculatedTotal),
-                                    },
-                                  });
-                                }}
-                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <span className="text-xs font-extrabold text-slate-900">
-                                2. Taksit (Kalan - %{100 - advPercent})
-                              </span>
-                            </label>
-                            <span className="font-mono font-bold text-xs text-slate-900">
-                              ₺{inst2Amount.toLocaleString('tr-TR')}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-500">
-                            {is2Paid ? (
-                              <span className="text-emerald-700 font-bold flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5" /> Tamamı Tahsil Edildi
-                              </span>
-                            ) : formData.paymentTerms.paymentStatus === 'dosya_bitti_odeme_bekliyor' ? (
-                              <span className="text-amber-800 font-bold flex items-center gap-1">
-                                <FolderCheck className="w-3.5 h-3.5 text-amber-600" /> Dosya Hazır, Kalan Bakiye Bekleniyor
-                              </span>
-                            ) : (
-                              <span className="text-slate-500 font-medium">Teslimat / Son Aşama</span>
-                            )}
-                          </div>
-                        </div>
-
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Live Payment Summary Box */}
-                {(() => {
-                  const calculatedSubtotal = Math.max(0, formData.pricing.subtotal - (formData.pricing.discount || 0));
-                  const calculatedTotal = formData.pricing.isWithoutVat || formData.pricing.invoiceType === 'faturasiz'
-                    ? calculatedSubtotal
-                    : Math.round(calculatedSubtotal * (1 + (formData.pricing.vatRate || 20) / 100));
-                  const currentSt = formData.paymentTerms.paymentStatus || 'odeme_bekliyor';
-                  const advRatio = (formData.paymentTerms.advanceRatio || 50) / 100;
+                const updateInstallments = (newInst: PaymentInstallment[], overrideStatus?: PaymentStatus) => {
+                  const newPaid = newInst
+                    .filter((i) => i.isPaid)
+                    .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+                  const newRem = Math.max(0, calculatedTotal - newPaid);
                   
-                  let paid = 0;
-                  if (currentSt === 'tamami_odendi') paid = calculatedTotal;
-                  else if (currentSt === 'ilk_taksit_odendi' || currentSt === 'dosya_bitti_odeme_bekliyor') paid = Math.round(calculatedTotal * advRatio);
-                  else if (currentSt === 'ara_odeme_odendi') paid = Math.round(calculatedTotal * 0.75);
-                  
-                  const remaining = Math.max(0, calculatedTotal - paid);
+                  let newStatus = overrideStatus || formData.paymentTerms.paymentStatus || 'odeme_bekliyor';
+                  if (!overrideStatus) {
+                    const allPaid = newInst.length > 0 && newInst.every((i) => i.isPaid);
+                    const nonePaid = newInst.every((i) => !i.isPaid);
+                    if (allPaid) {
+                      newStatus = 'tamami_odendi';
+                    } else if (nonePaid) {
+                      newStatus = 'odeme_bekliyor';
+                    } else if (newInst[0]?.isPaid && newInst.slice(1).some((i) => i.isPaid)) {
+                      newStatus = 'ara_odeme_odendi';
+                    } else if (newInst[0]?.isPaid) {
+                      newStatus = 'ilk_taksit_odendi';
+                    }
+                  }
 
-                  return (
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-center">
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <div className="text-[10px] uppercase font-bold text-slate-400">Toplam Tutar</div>
-                        <div className="text-xs sm:text-sm font-black text-slate-900 font-mono">
-                          ₺{calculatedTotal.toLocaleString('tr-TR')}
+                  const firstPct = newInst[0]?.percentage || formData.paymentTerms.advanceRatio || (formData.type === 'statik_guclendirme' ? 50 : 30);
+
+                  setFormData({
+                    ...formData,
+                    paymentTerms: {
+                      ...formData.paymentTerms,
+                      advanceRatio: firstPct,
+                      uponDeliveryRatio: 100 - firstPct,
+                      paymentStatus: newStatus,
+                      installments: newInst,
+                      totalPaidAmount: newPaid,
+                      remainingAmount: newRem,
+                    },
+                  });
+                };
+
+                const handleFieldChange = (idx: number, field: keyof PaymentInstallment, val: any) => {
+                  const updated = installments.map((inst, i) => {
+                    if (i !== idx) return inst;
+                    if (field === 'percentage') {
+                      const pct = Number(val) || 0;
+                      const amt = Math.round(calculatedTotal * (pct / 100));
+                      return { ...inst, percentage: pct, amount: amt };
+                    }
+                    if (field === 'amount') {
+                      const amt = Number(val) || 0;
+                      const pct = calculatedTotal > 0 ? Math.round((amt / calculatedTotal) * 100) : 0;
+                      return { ...inst, amount: amt, percentage: pct };
+                    }
+                    if (field === 'isPaid') {
+                      const isP = Boolean(val);
+                      return {
+                        ...inst,
+                        isPaid: isP,
+                        paidAt: isP ? (inst.paidAt || new Date().toISOString().split('T')[0]) : inst.paidAt,
+                      };
+                    }
+                    return { ...inst, [field]: val };
+                  });
+                  updateInstallments(updated);
+                };
+
+                const handleAddInstallment = () => {
+                  const currentPctSum = installments.reduce((s, i) => s + (Number(i.percentage) || 0), 0);
+                  const remPct = Math.max(0, 100 - currentPctSum);
+                  const remAmt = Math.round(calculatedTotal * (remPct / 100));
+                  const newInst: PaymentInstallment = {
+                    id: 'inst_' + Date.now(),
+                    name: `${installments.length + 1}. Taksit`,
+                    percentage: remPct > 0 ? remPct : 10,
+                    amount: remPct > 0 ? remAmt : Math.round(calculatedTotal * 0.1),
+                    isPaid: false,
+                    paymentMethod: 'havale_eft',
+                  };
+                  updateInstallments([...installments, newInst]);
+                };
+
+                const handleRemoveInstallment = (idx: number) => {
+                  if (installments.length <= 1) return;
+                  const updated = installments.filter((_, i) => i !== idx);
+                  updateInstallments(updated);
+                };
+
+                const handleResetDefault = () => {
+                  const def = generateDefaultInstallments(formData.type, calculatedTotal);
+                  updateInstallments(def, 'odeme_bekliyor');
+                };
+
+                const isGuclendirme = formData.type === 'statik_guclendirme';
+
+                return (
+                  <div className="space-y-4">
+                    {/* Header Row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-700 flex items-center justify-center">
+                          <CreditCard className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-extrabold text-slate-900">
+                            Ödeme ve Tahsilat Takip Masası
+                          </h3>
+                          <p className="text-[11px] text-slate-500">
+                            Taksit oranlarını, tutarlarını manuel olarak düzenleyebilir ve tahsilatları takip edebilirsiniz.
+                          </p>
                         </div>
                       </div>
-                      <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
-                        <div className="text-[10px] uppercase font-bold text-emerald-800">Tahsil Edilen</div>
-                        <div className="text-xs sm:text-sm font-black text-emerald-700 font-mono">
-                          ₺{paid.toLocaleString('tr-TR')}
-                        </div>
-                      </div>
-                      <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200">
-                        <div className="text-[10px] uppercase font-bold text-amber-800">Kalan Alacak</div>
-                        <div className="text-xs sm:text-sm font-black text-amber-700 font-mono">
-                          ₺{remaining.toLocaleString('tr-TR')}
-                        </div>
-                      </div>
+
+                      {/* Dosya Bitti Checkbox */}
+                      <label className="inline-flex items-center gap-2 cursor-pointer bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 transition">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(formData.paymentTerms.fileCompleted || formData.paymentTerms.paymentStatus === 'dosya_bitti_odeme_bekliyor')}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setFormData({
+                              ...formData,
+                              paymentTerms: {
+                                ...formData.paymentTerms,
+                                fileCompleted: checked,
+                                paymentStatus: checked && formData.paymentTerms.paymentStatus !== 'tamami_odendi'
+                                  ? 'dosya_bitti_odeme_bekliyor'
+                                  : formData.paymentTerms.paymentStatus || 'odeme_bekliyor',
+                              },
+                            });
+                          }}
+                          className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                          <FolderCheck className="w-3.5 h-3.5 text-amber-600" />
+                          Dosya / Rapor Bitti
+                        </span>
+                      </label>
                     </div>
-                  );
-                })()}
 
-              </div>
+                    {/* 5 Big Action Buttons for Payment Status */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                      {(['odeme_bekliyor', 'ilk_taksit_odendi', 'ara_odeme_odendi', 'dosya_bitti_odeme_bekliyor', 'tamami_odendi'] as PaymentStatus[]).map((st) => {
+                        const info = PAYMENT_STATUS_LABELS[st];
+                        const isSelected = (formData.paymentTerms.paymentStatus || 'odeme_bekliyor') === st;
 
+                        return (
+                          <button
+                            key={st}
+                            type="button"
+                            onClick={() => {
+                              let updatedInst = installments;
+                              if (st === 'tamami_odendi') {
+                                updatedInst = installments.map((i) => ({ ...i, isPaid: true }));
+                              } else if (st === 'odeme_bekliyor') {
+                                updatedInst = installments.map((i) => ({ ...i, isPaid: false }));
+                              } else if (st === 'ilk_taksit_odendi') {
+                                updatedInst = installments.map((i, idx) => ({ ...i, isPaid: idx === 0 }));
+                              } else if (st === 'ara_odeme_odendi') {
+                                updatedInst = installments.map((i, idx) => ({ ...i, isPaid: idx <= 1 }));
+                              }
+                              updateInstallments(updatedInst, st);
+                            }}
+                            className={`p-3 rounded-xl border text-left transition flex flex-col justify-between gap-1.5 ${
+                              isSelected 
+                                ? 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500/20 shadow-sm' 
+                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`w-2.5 h-2.5 rounded-full ${info.dot}`} />
+                              {isSelected && <CheckCircle2 className="w-4 h-4 text-amber-600" />}
+                            </div>
+                            <div className="font-extrabold text-xs text-slate-900 leading-tight">
+                              {info.label}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Installments & Manual Entry Section */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                            Taksit ve Tahsilat Planı (Manuel Düzenlenebilir)
+                          </h4>
+                          <span className="text-[11px] text-slate-500">
+                            Taksit adını, oranını (%), tutarını (₺) ve ödeme durumunu serbestçe değiştirebilirsiniz.
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleResetDefault}
+                            className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                            title="Standart taksit oranlarını geri yükle"
+                          >
+                            <RotateCcw className="w-3 h-3 text-slate-500" />
+                            <span>{isGuclendirme ? 'Varsayılan (%50 - %50)' : 'Varsayılan (%30 - %30 - %40)'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleAddInstallment}
+                            className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>+ Taksit Ekle</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Installment Items Cards */}
+                      <div className="space-y-3">
+                        {installments.map((inst, idx) => {
+                          const isPaid = Boolean(inst.isPaid);
+
+                          return (
+                            <div
+                              key={inst.id || `inst_${idx}`}
+                              className={`p-3.5 rounded-xl border transition ${
+                                isPaid
+                                  ? 'bg-emerald-50/70 border-emerald-300 shadow-sm'
+                                  : 'bg-white border-slate-200 hover:border-slate-300'
+                              }`}
+                            >
+                              {/* Row 1: Checkbox & Name & Delete */}
+                              <div className="flex items-center gap-3 mb-2.5">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={isPaid}
+                                    onChange={(e) => handleFieldChange(idx, 'isPaid', e.target.checked)}
+                                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                  />
+                                  <span className={`text-xs font-extrabold px-2 py-0.5 rounded-md ${
+                                    isPaid ? 'bg-emerald-200/70 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                                  }`}>
+                                    {idx + 1}. Taksit {isPaid ? '(Tahsil Edildi)' : ''}
+                                  </span>
+                                </label>
+
+                                <input
+                                  type="text"
+                                  value={inst.name}
+                                  onChange={(e) => handleFieldChange(idx, 'name', e.target.value)}
+                                  placeholder="Taksit açıklaması (örn: 1. Taksit - Peşinat)"
+                                  className="flex-1 px-2.5 py-1.5 bg-slate-50 focus:bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none transition"
+                                />
+
+                                {installments.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveInstallment(idx)}
+                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                    title="Bu taksiti sil"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Row 2: Percentage, Amount, Payment Method, Date */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                {/* Percentage Input */}
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                                    Taksit Oranı (%)
+                                  </label>
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      step="1"
+                                      value={inst.percentage ?? 0}
+                                      onChange={(e) => handleFieldChange(idx, 'percentage', e.target.value)}
+                                      className="w-full pl-2.5 pr-7 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                                    />
+                                    <span className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-slate-400 text-xs font-bold">
+                                      %
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Amount Input */}
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                                    Tutar (₺)
+                                  </label>
+                                  <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400 text-xs font-bold">
+                                      ₺
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="100"
+                                      value={inst.amount ?? 0}
+                                      onChange={(e) => handleFieldChange(idx, 'amount', e.target.value)}
+                                      className="w-full pl-6 pr-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Payment Method */}
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                                    Ödeme Kanalı
+                                  </label>
+                                  <select
+                                    value={inst.paymentMethod || 'havale_eft'}
+                                    onChange={(e) => handleFieldChange(idx, 'paymentMethod', e.target.value)}
+                                    className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                                  >
+                                    <option value="havale_eft">Havale / EFT</option>
+                                    <option value="nakit">Nakit</option>
+                                    <option value="kredi_karti">Kredi Kartı</option>
+                                    <option value="cek">Çek / Senet</option>
+                                    <option value="diger">Diğer</option>
+                                  </select>
+                                </div>
+
+                                {/* Paid Date / Notes */}
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                                    Tahsil Tarihi
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={inst.paidAt ? inst.paidAt.split('T')[0] : ''}
+                                    onChange={(e) => handleFieldChange(idx, 'paidAt', e.target.value)}
+                                    className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Percentage & Amount Summary Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500 font-medium">Taksit Oran Toplamı:</span>
+                          <span className={`font-mono font-bold px-2 py-0.5 rounded-md ${
+                            totalPct === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
+                          }`}>
+                            %{totalPct} {totalPct === 100 ? '✓ (Tam)' : '(Fark: %' + (100 - totalPct) + ')'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500 font-medium">Taksit Tutarları Toplamı:</span>
+                          <span className="font-mono font-extrabold text-slate-900">
+                            ₺{totalInstAmount.toLocaleString('tr-TR')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Live Payment Summary 3 Cards */}
+                      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-200 text-center">
+                        <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Toplam Tutar</div>
+                          <div className="text-xs sm:text-sm font-black text-slate-900 font-mono">
+                            ₺{calculatedTotal.toLocaleString('tr-TR')}
+                          </div>
+                        </div>
+                        <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+                          <div className="text-[10px] uppercase font-bold text-emerald-800">Tahsil Edilen</div>
+                          <div className="text-xs sm:text-sm font-black text-emerald-700 font-mono">
+                            ₺{totalPaid.toLocaleString('tr-TR')}
+                          </div>
+                        </div>
+                        <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                          <div className="text-[10px] uppercase font-bold text-amber-800">Kalan Alacak</div>
+                          <div className="text-xs sm:text-sm font-black text-amber-700 font-mono">
+                            ₺{remaining.toLocaleString('tr-TR')}
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+
+                  </div>
+                );
+              })()}
             </div>
 
           </div>
