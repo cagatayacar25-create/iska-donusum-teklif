@@ -57,9 +57,9 @@ const normalizeTr = (str?: string): string => {
 const isIstanbulCity = (cityName?: string): boolean => {
   if (!cityName) return true;
   const c = cityName.trim();
-  if (c === 'İstanbul' || c === 'istanbul' || c === 'ISTANBUL') return true;
+  if (c === 'İstanbul' || c === 'istanbul' || c === 'ISTANBUL' || c === 'Istanbul') return true;
   const norm = normalizeTr(c);
-  return norm.includes('istanb') || norm.includes('ist');
+  return norm === 'istanbul' || norm === 'ist';
 };
 
 const matchIstanbulDistrict = (distStr?: string): string => {
@@ -70,23 +70,7 @@ const matchIstanbulDistrict = (distStr?: string): string => {
     const normD = normalizeTr(d);
     return normTarget.includes(normD) || normD.includes(normTarget);
   });
-  return match || 'Kadıköy';
-};
-
-const matchIstanbulNeighborhood = (distStr?: string, neighStr?: string): string => {
-  const matchedDist = matchIstanbulDistrict(distStr);
-  const neighs = ISTANBUL_NEIGHBORHOODS[matchedDist] || [];
-  if (neighs.length === 0) return neighStr || '';
-  if (neighStr && neighs.includes(neighStr)) return neighStr;
-  if (neighStr) {
-    const normTarget = normalizeTr(neighStr);
-    const match = neighs.find((m) => {
-      const normM = normalizeTr(m);
-      return normTarget.includes(normM) || normM.includes(normTarget);
-    });
-    if (match) return match;
-  }
-  return neighs[0] || '';
+  return match || distStr;
 };
 
 export const ProposalForm: React.FC<ProposalFormProps> = ({
@@ -100,20 +84,32 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
   const [newScopeTitle, setNewScopeTitle] = useState('');
   const [newScopeDesc, setNewScopeDesc] = useState('');
 
-  // Sync state if proposal prop changes & auto-assign valid Istanbul district/neighborhood if city is Istanbul
+  // Manual entry toggle states
+  const [customCityMode, setCustomCityMode] = useState<boolean>(() => {
+    return !!(proposal.property?.city && !CITIES.includes(proposal.property.city));
+  });
+  const [customDistrictMode, setCustomDistrictMode] = useState<boolean>(() => {
+    return !!(isIstanbulCity(proposal.property?.city) && proposal.property?.district && !ISTANBUL_DISTRICTS.includes(proposal.property.district));
+  });
+  const [customNeighborhoodMode, setCustomNeighborhoodMode] = useState<boolean>(() => {
+    if (!isIstanbulCity(proposal.property?.city)) return true;
+    const currentDist = proposal.property?.district || 'Kadıköy';
+    const neighs = ISTANBUL_NEIGHBORHOODS[currentDist] || [];
+    if (!proposal.property?.neighborhood) return false;
+    return !neighs.includes(proposal.property.neighborhood);
+  });
+
+  // Sync state if proposal prop changes
   useEffect(() => {
     let prop = { ...proposal };
-    if (!prop.property?.city || isIstanbulCity(prop.property.city)) {
-      const validCity = 'İstanbul';
-      const validDistrict = matchIstanbulDistrict(prop.property?.district);
-      const validNeigh = matchIstanbulNeighborhood(validDistrict, prop.property?.neighborhood);
+    if (!prop.property?.city) {
       prop = {
         ...prop,
         property: {
           ...prop.property,
-          city: validCity,
-          district: validDistrict,
-          neighborhood: validNeigh,
+          city: 'İstanbul',
+          district: prop.property?.district || 'Kadıköy',
+          neighborhood: prop.property?.neighborhood ?? '',
         },
       };
     }
@@ -124,6 +120,20 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
       };
     }
     setFormData(prop);
+
+    if (prop.property?.city && !CITIES.includes(prop.property.city)) {
+      setCustomCityMode(true);
+    }
+    if (isIstanbulCity(prop.property?.city) && prop.property?.district && !ISTANBUL_DISTRICTS.includes(prop.property.district)) {
+      setCustomDistrictMode(true);
+    }
+    if (isIstanbulCity(prop.property?.city)) {
+      const d = prop.property?.district || 'Kadıköy';
+      const nList = ISTANBUL_NEIGHBORHOODS[d] || [];
+      if (prop.property?.neighborhood && !nList.includes(prop.property.neighborhood)) {
+        setCustomNeighborhoodMode(true);
+      }
+    }
   }, [proposal]);
 
   // Recalculate Guclendirme totals helper
@@ -671,89 +681,153 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* İl (City) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">İl *</label>
-                <select
-                  required
-                  value={
-                    isIstanbulCity(formData.property.city)
-                      ? 'İstanbul'
-                      : CITIES.includes(formData.property.city)
-                      ? formData.property.city
-                      : 'İstanbul'
-                  }
-                  onChange={(e) => {
-                    const newCity = e.target.value;
-                    const isIst = isIstanbulCity(newCity);
-                    const matchedDist = isIst ? matchIstanbulDistrict(formData.property.district) : formData.property.district;
-                    const matchedNeigh = isIst ? matchIstanbulNeighborhood(matchedDist, formData.property.neighborhood) : formData.property.neighborhood;
-                    setFormData((prev) => ({
-                      ...prev,
-                      property: {
-                        ...prev.property,
-                        city: newCity,
-                        district: matchedDist,
-                        neighborhood: matchedNeigh,
-                      },
-                    }));
-                  }}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
-                >
-                  {CITIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">İl *</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextMode = !customCityMode;
+                      setCustomCityMode(nextMode);
+                      if (nextMode) {
+                        setCustomDistrictMode(true);
+                        setCustomNeighborhoodMode(true);
+                      }
+                    }}
+                    className="text-[10px] font-bold text-amber-700 hover:text-amber-900 hover:underline flex items-center gap-0.5"
+                  >
+                    {customCityMode ? '📋 Listeden Seç' : '✍️ Manuel İl Yaz'}
+                  </button>
+                </div>
+
+                {customCityMode ? (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={formData.property.city || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          property: { ...formData.property, city: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-amber-50/40 border border-amber-400 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                      placeholder="Örn: Kocaeli, Tekirdağ, Bursa, Yalova, vb."
+                    />
+                  </div>
+                ) : (
+                  <select
+                    required
+                    value={
+                      formData.property.city && CITIES.includes(formData.property.city)
+                        ? formData.property.city
+                        : formData.property.city === ''
+                        ? ''
+                        : isIstanbulCity(formData.property.city)
+                        ? 'İstanbul'
+                        : '__custom__'
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__custom__') {
+                        setCustomCityMode(true);
+                        setCustomDistrictMode(true);
+                        setCustomNeighborhoodMode(true);
+                        return;
+                      }
+                      const isIst = isIstanbulCity(val);
+                      if (!isIst) {
+                        setCustomDistrictMode(true);
+                        setCustomNeighborhoodMode(true);
+                      }
+                      setFormData((prev) => ({
+                        ...prev,
+                        property: {
+                          ...prev.property,
+                          city: val,
+                        },
+                      }));
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                  >
+                    <option value="">-- İl Seçiniz --</option>
+                    {CITIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    <option value="__custom__">✍️ Diğer / Manuel İl Girişi Yap...</option>
+                  </select>
+                )}
               </div>
 
               {/* İlçe (District) */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase">İlçe *</label>
-                  {isIstanbulCity(formData.property.city) && (
-                    <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
-                      39 İlçe Otomatik
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {isIstanbulCity(formData.property.city) && !customDistrictMode && (
+                      <span className="text-[9.5px] font-extrabold text-amber-800 bg-amber-100 px-1 py-0.2 rounded">
+                        39 İlçe
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCustomDistrictMode(!customDistrictMode)}
+                      className="text-[10px] font-bold text-amber-700 hover:text-amber-900 hover:underline"
+                    >
+                      {customDistrictMode ? '📋 Listeden Seç' : '✍️ Manuel İlçe Yaz'}
+                    </button>
+                  </div>
                 </div>
 
-                {isIstanbulCity(formData.property.city) ? (
+                {!customDistrictMode && isIstanbulCity(formData.property.city) ? (
                   <select
                     required
-                    value={matchIstanbulDistrict(formData.property.district)}
+                    value={
+                      ISTANBUL_DISTRICTS.includes(formData.property.district)
+                        ? formData.property.district
+                        : formData.property.district === ''
+                        ? ''
+                        : '__custom__'
+                    }
                     onChange={(e) => {
-                      const newDistrict = e.target.value;
-                      const defaultNeigh = matchIstanbulNeighborhood(newDistrict, '');
+                      const val = e.target.value;
+                      if (val === '__custom__') {
+                        setCustomDistrictMode(true);
+                        return;
+                      }
                       setFormData((prev) => ({
                         ...prev,
                         property: {
                           ...prev.property,
-                          district: newDistrict,
-                          neighborhood: defaultNeigh,
+                          district: val,
                         },
                       }));
                     }}
                     className="w-full px-3 py-2 bg-amber-50/50 border border-amber-300 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
                   >
+                    <option value="">-- İlçe Seçiniz veya Manuel Yazınız --</option>
                     {ISTANBUL_DISTRICTS.map((d) => (
                       <option key={d} value={d}>
                         {d}
                       </option>
                     ))}
+                    <option value="__custom__">✍️ Diğer / Manuel İlçe Girişi Yap...</option>
                   </select>
                 ) : (
                   <input
                     type="text"
                     required
-                    value={formData.property.district}
+                    value={formData.property.district || ''}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
                         property: { ...formData.property, district: e.target.value },
                       })
                     }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
-                    placeholder="Kadıköy"
+                    className="w-full px-3 py-2 bg-amber-50/30 border border-amber-300 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                    placeholder="Örn: Kadıköy, Gebze, Çorlu, Nilüfer vb."
                   />
                 )}
               </div>
@@ -762,49 +836,66 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase">Mahalle</label>
-                  {isIstanbulCity(formData.property.city) && (
-                    <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded">
-                      {(ISTANBUL_NEIGHBORHOODS[matchIstanbulDistrict(formData.property.district)] || []).length} Mahalle
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {isIstanbulCity(formData.property.city) && !customNeighborhoodMode && (ISTANBUL_NEIGHBORHOODS[formData.property.district] || []).length > 0 && (
+                      <span className="text-[9.5px] font-extrabold text-emerald-800 bg-emerald-100 px-1 py-0.2 rounded">
+                        {(ISTANBUL_NEIGHBORHOODS[formData.property.district] || []).length} Mahalle
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCustomNeighborhoodMode(!customNeighborhoodMode)}
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline"
+                    >
+                      {customNeighborhoodMode ? '📋 Listeden Seç' : '✍️ Manuel Mahalle Yaz'}
+                    </button>
+                  </div>
                 </div>
 
-                {isIstanbulCity(formData.property.city) ? (
+                {!customNeighborhoodMode &&
+                isIstanbulCity(formData.property.city) &&
+                (ISTANBUL_NEIGHBORHOODS[formData.property.district] || []).length > 0 ? (
                   <select
-                    value={matchIstanbulNeighborhood(
-                      formData.property.district,
-                      formData.property.neighborhood
-                    )}
-                    onChange={(e) =>
+                    value={
+                      (ISTANBUL_NEIGHBORHOODS[formData.property.district] || []).includes(formData.property.neighborhood)
+                        ? formData.property.neighborhood
+                        : formData.property.neighborhood === ''
+                        ? ''
+                        : '__custom__'
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__custom__') {
+                        setCustomNeighborhoodMode(true);
+                        return;
+                      }
                       setFormData({
                         ...formData,
-                        property: { ...formData.property, neighborhood: e.target.value },
-                      })
-                    }
+                        property: { ...formData.property, neighborhood: val },
+                      });
+                    }}
                     className="w-full px-3 py-2 bg-emerald-50/50 border border-emerald-300 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
                   >
-                    {(
-                      ISTANBUL_NEIGHBORHOODS[
-                        matchIstanbulDistrict(formData.property.district)
-                      ] || []
-                    ).map((m) => (
+                    <option value="">-- Mahalle Seçiniz (veya Boş Bırakınız) --</option>
+                    {(ISTANBUL_NEIGHBORHOODS[formData.property.district] || []).map((m) => (
                       <option key={m} value={m}>
                         {m}
                       </option>
                     ))}
+                    <option value="__custom__">✍️ Diğer / Manuel Mahalle Girişi Yap...</option>
                   </select>
                 ) : (
                   <input
                     type="text"
-                    value={formData.property.neighborhood}
+                    value={formData.property.neighborhood || ''}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
                         property: { ...formData.property, neighborhood: e.target.value },
                       })
                     }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
-                    placeholder="Göztepe Mah."
+                    className="w-full px-3 py-2 bg-emerald-50/30 border border-emerald-300 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                    placeholder="Örn: Göztepe Mah., Dudullu OSB veya Boş"
                   />
                 )}
               </div>

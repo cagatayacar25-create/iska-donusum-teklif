@@ -1,6 +1,7 @@
 import { Proposal, CompanyProfile, ProposalType, PaymentStatus, PaymentInstallment } from '../types';
 import { DEFAULT_COMPANY_PROFILE, DEFAULT_SCOPES, DEFAULT_GUCLENDIRME_PARAMS } from '../data/defaultTemplates';
 import { INITIAL_PROPOSALS } from '../data/defaultProposals';
+import { ISKA_LOGO_DATA_URL } from '../assets/iskaLogo';
 import { 
   syncSaveProposalToCloud, 
   syncDeleteProposalFromCloud, 
@@ -15,10 +16,21 @@ export function getCompanyProfile(): CompanyProfile {
     const saved = localStorage.getItem(COMPANY_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
+      let logoUrl = parsed.logoUrl || DEFAULT_COMPANY_PROFILE.logoUrl;
+      // Upgrade legacy URL-encoded SVG or empty string to modern base64 SVG data URL
+      if (
+        !logoUrl ||
+        typeof logoUrl !== 'string' ||
+        logoUrl.includes('charset=utf-8') ||
+        logoUrl.includes('%3Csvg') ||
+        logoUrl.includes('%20')
+      ) {
+        logoUrl = ISKA_LOGO_DATA_URL;
+      }
       return {
         ...DEFAULT_COMPANY_PROFILE,
         ...parsed,
-        logoUrl: parsed.logoUrl || DEFAULT_COMPANY_PROFILE.logoUrl,
+        logoUrl,
       };
     }
   } catch (e) {

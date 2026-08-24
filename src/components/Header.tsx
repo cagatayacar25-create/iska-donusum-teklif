@@ -17,7 +17,7 @@ import {
   CloudCheck,
   RefreshCw
 } from 'lucide-react';
-import { ISKA_LOGO_DATA_URL } from '../assets/iskaLogo';
+import { ISKA_LOGO_DATA_URL, IskaLogoSvg } from '../assets/iskaLogo';
 
 interface HeaderProps {
   activeTab: 'list' | 'form' | 'settings';
@@ -73,13 +73,15 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-3 text-left group transition"
             >
               <div className="h-10 px-2.5 rounded-xl bg-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform border border-slate-700 shrink-0">
-                <img src={ISKA_LOGO_DATA_URL} alt="İSKA Logo" className="h-7 w-auto object-contain" />
+                <IskaLogoSvg className="h-7 w-auto object-contain" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-sm sm:text-base font-extrabold text-slate-100 tracking-tight leading-none group-hover:text-amber-400 transition-colors flex items-center gap-1.5">
                     <span>Riskli Bina & Performans Teklifi</span>
-                    <img src={ISKA_LOGO_DATA_URL} alt="İSKA" className="h-4 sm:h-5 w-auto inline-block bg-white px-1 py-0.5 rounded shadow-sm border border-slate-700" />
+                    <span className="inline-flex items-center bg-white px-1 py-0.5 rounded shadow-sm border border-slate-700">
+                      <IskaLogoSvg className="h-3.5 sm:h-4 w-auto" />
+                    </span>
                   </h1>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px] sm:max-w-xs font-medium">

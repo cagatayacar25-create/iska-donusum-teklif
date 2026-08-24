@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Proposal, CompanyProfile } from '../types';
 import { PROPOSAL_TYPE_LABELS } from '../data/defaultTemplates';
 import { exportProposalToPdf } from '../utils/pdfGenerator';
-import { ISKA_LOGO_DATA_URL } from '../assets/iskaLogo';
+import { ISKA_LOGO_DATA_URL, CompanyLogoDisplay } from '../assets/iskaLogo';
 import { 
   Download, 
   Printer, 
@@ -172,9 +172,9 @@ ${companyProfile.name}
                     {/* Header */}
                     <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-5">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>
@@ -457,9 +457,9 @@ ${companyProfile.name}
                     {/* Header */}
                     <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-5">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>
@@ -634,9 +634,9 @@ ${companyProfile.name}
                     {/* Header */}
                     <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-6">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>
@@ -764,9 +764,9 @@ ${companyProfile.name}
                     {/* Header: Logo + Company Name/Title & Date */}
                     <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-6">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>
@@ -859,9 +859,9 @@ ${companyProfile.name}
                     {/* Header */}
                     <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-6">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>
@@ -1059,9 +1059,9 @@ ${companyProfile.name}
                     {/* Header */}
                     <div className="flex justify-between items-start border-b-2 border-slate-900 pb-3 mb-6">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>
@@ -1208,9 +1208,9 @@ ${companyProfile.name}
                   <div className="border-b-2 border-emerald-800 pb-4 mb-4 flex flex-col sm:flex-row justify-between items-start gap-4">
                     <div className="space-y-1 max-w-lg">
                       <div className="flex items-center gap-3 mb-1">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-14 w-auto object-contain max-w-[200px]" 
                         />
                       </div>
@@ -1537,9 +1537,9 @@ ${companyProfile.name}
                     {/* Header */}
                     <div className="flex justify-between items-start border-b-2 border-blue-900 pb-3 mb-6">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>
@@ -1620,9 +1620,9 @@ ${companyProfile.name}
                     {/* Header */}
                     <div className="flex justify-between items-start border-b-2 border-blue-900 pb-3 mb-6">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>
@@ -1807,9 +1807,9 @@ ${companyProfile.name}
                     {/* Header */}
                     <div className="flex justify-between items-start border-b-2 border-blue-900 pb-3 mb-6">
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={companyProfile.logoUrl || ISKA_LOGO_DATA_URL} 
-                          alt="İSKA Logo" 
+                        <CompanyLogoDisplay 
+                          logoUrl={companyProfile.logoUrl} 
+                          alt={companyProfile.name} 
                           className="h-16 w-auto object-contain" 
                         />
                         <div>

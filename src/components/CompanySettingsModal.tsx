@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CompanyProfile } from '../types';
 import { Building2, Save, Upload, X, Check, Award, FileText, Image as ImageIcon } from 'lucide-react';
+import { CompanyLogoDisplay, ISKA_LOGO_DATA_URL } from '../assets/iskaLogo';
 
 interface CompanySettingsProps {
   isOpen: boolean;
@@ -189,7 +190,7 @@ export const CompanySettingsModal: React.FC<CompanySettingsProps> = ({
               <div className="flex items-center gap-3">
                 {formData.logoUrl ? (
                   <div className="w-16 h-16 border rounded-lg overflow-hidden bg-slate-50 flex items-center justify-center p-1 relative">
-                    <img src={formData.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
+                    <CompanyLogoDisplay logoUrl={formData.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, logoUrl: '' })}
