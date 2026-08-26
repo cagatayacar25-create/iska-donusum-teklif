@@ -287,14 +287,18 @@ export function generateDefaultInstallments(type: ProposalType, grandTotal: numb
 
 export function createEmptyProposal(type: ProposalType): Proposal {
   const now = new Date().toISOString();
+  const isRiskli = type === 'riskli_yapi';
   const isGuclendirme = type === 'statik_guclendirme';
   const isPerformans = type === 'performans_raporu';
   const isOrtaKatli = type === 'orta_katli_risk';
   const defaultFloors = isOrtaKatli ? 10 : (isGuclendirme ? 4 : 6);
   const defaultUnitPrice = (isOrtaKatli || isPerformans) ? 30000 : (isGuclendirme ? 600000 : 45000);
-  const defaultPricingMethod = (isOrtaKatli || isPerformans) ? 'kat_basi' : 'toplam_sabit';
+  const defaultPricingMethod = isRiskli ? 'bina_basi' : ((isOrtaKatli || isPerformans) ? 'kat_basi' : 'toplam_sabit');
+  const defaultBuildingCount = isGuclendirme ? 2 : 1;
   const subtotal = isGuclendirme 
     ? DEFAULT_GUCLENDIRME_PARAMS.stage1Total 
+    : isRiskli
+    ? defaultUnitPrice * defaultBuildingCount
     : (defaultPricingMethod === 'kat_basi' ? defaultUnitPrice * defaultFloors : defaultUnitPrice);
   const vatRate = 20;
   const totalAmount = Math.round(subtotal * (1 + vatRate / 100));

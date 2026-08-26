@@ -293,15 +293,21 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
       return;
     }
 
+    const isRiskli = newType === 'riskli_yapi';
     const isPerformans = newType === 'performans_raporu';
     const isOrtaKatli = newType === 'orta_katli_risk';
-    const defaultPricingMethod = (isOrtaKatli || isPerformans) ? 'kat_basi' : 'toplam_sabit';
+    const defaultPricingMethod = (isOrtaKatli || isPerformans) ? 'kat_basi' : (isRiskli ? 'bina_basi' : 'toplam_sabit');
     const defaultUnitPrice = (isOrtaKatli || isPerformans) ? 30000 : 45000;
     let floors = Number(formData.property.totalFloors) || (isOrtaKatli ? 10 : 6);
     if (isOrtaKatli && floors < 10) {
       floors = 10;
     }
-    const subtotal = defaultPricingMethod === 'kat_basi' ? defaultUnitPrice * floors : defaultUnitPrice;
+    const bCount = Math.max(1, Number(formData.property.buildingCount) || 1);
+    const subtotal = isRiskli 
+      ? defaultUnitPrice * bCount 
+      : defaultPricingMethod === 'kat_basi' 
+      ? defaultUnitPrice * floors 
+      : defaultUnitPrice;
     const discount = formData.pricing.discount || 0;
     const vatRate = formData.pricing.vatRate || 20;
     const afterDiscount = Math.max(0, subtotal - discount);
@@ -314,6 +320,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
       property: {
         ...prev.property,
         totalFloors: floors,
+        buildingCount: bCount,
       },
       scopeItems: JSON.parse(JSON.stringify(DEFAULT_SCOPES[newType])),
       pricing: {
@@ -335,14 +342,17 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
     onSave(formData, previewAfterSave);
   };
 
-  // Recalculate totals whenever pricing fields, floor count, or method change
+  // Recalculate totals whenever pricing fields, floor count, building count, or method change
   const updatePricing = (field: string, value: any) => {
     setFormData((prev) => {
       const newPricing = { ...prev.pricing };
       let updatedFloors = Number(prev.property.totalFloors) || 1;
+      let updatedBuildingCount = Math.max(1, Number(prev.property.buildingCount) || 1);
 
       if (field === 'floors') {
         updatedFloors = Number(value) || 0;
+      } else if (field === 'buildingCount') {
+        updatedBuildingCount = Math.max(1, Number(value) || 1);
       } else {
         (newPricing as Record<string, any>)[field] = value;
       }
@@ -376,9 +386,13 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
 
       newPricing.kollukKuvvetiIncluded = kollukIncluded;
       newPricing.kollukKuvvetiPrice = kollukPrice;
+      newPricing.unitPrice = unitPrice;
 
       let baseSubtotal = 0;
-      if (method === 'kat_basi') {
+      if (isRiskli) {
+        // Riskli Yapı: Bina Sayısı × Bina Başı Birim Fiyat
+        baseSubtotal = Math.round(unitPrice * (updatedBuildingCount || 1));
+      } else if (method === 'kat_basi') {
         baseSubtotal = Math.round(unitPrice * (updatedFloors || 1));
       } else {
         baseSubtotal = Math.round(unitPrice);
@@ -418,6 +432,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
         property: {
           ...prev.property,
           totalFloors: field === 'floors' ? (updatedFloors || '') : prev.property.totalFloors,
+          buildingCount: field === 'buildingCount' ? updatedBuildingCount : (prev.property.buildingCount || 1),
         },
         scopeItems: updatedScopeItems,
         pricing: newPricing,
@@ -929,16 +944,18 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                 {/* Yapı Sayısı (Adet) */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Yapı Sayısı (Adet) {formData.type === 'statik_guclendirme' && <span className="text-amber-600">*</span>}
+                    Yapı Sayısı (Adet) {(formData.type === 'statik_guclendirme' || formData.type === 'riskli_yapi') && <span className="text-amber-600">*</span>}
                   </label>
                   <input
                     type="number"
                     min="1"
                     value={formData.property.buildingCount || (formData.type === 'statik_guclendirme' ? 2 : 1)}
                     onChange={(e) => {
-                      const count = Number(e.target.value) || 1;
+                      const count = Math.max(1, Number(e.target.value) || 1);
                       if (formData.type === 'statik_guclendirme') {
                         updateGuclendirme({ buildingCount: count });
+                      } else if (formData.type === 'riskli_yapi') {
+                        updatePricing('buildingCount', count);
                       } else {
                         setFormData(prev => ({
                           ...prev,
@@ -947,7 +964,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                       }
                     }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold font-mono text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
-                    placeholder="2"
+                    placeholder="1"
                   />
                 </div>
 
@@ -1003,7 +1020,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                   )}
                   {formData.type === 'riskli_yapi' && (
                     <p className="text-[10px] text-slate-500 mt-1">
-                      * Riskli yapıda fiyat toplam götürü verilir, hesap tablosunda kat çarpımı yapılmaz.
+                      * Riskli yapıda fiyat Bina Sayısı × Bina Başı Fiyat olarak hesaplanır; kat sayısı raporda teknik bilgi olarak yer alır.
                     </p>
                   )}
                 </div>
@@ -1819,38 +1836,76 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
               </div>
             ) : formData.type === 'riskli_yapi' ? (
               /* ======================================================== */
-              /* RİSKLİ YAPI TESPİTİ (6306) GÖTÜRÜ / TOPLAM FİYAT         */
+              /* RİSKLİ YAPI TESPİTİ (6306) BİNA SAYISI × BİRİM FİYAT      */
               /* ======================================================== */
               <div className="space-y-4">
-                <div className="bg-blue-50/70 border border-blue-200 p-4 rounded-xl">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-black uppercase tracking-wider text-blue-950">
-                      Riskli Yapı Tespiti Temel Hizmet Bedeli
+                <div className="bg-blue-50/70 border border-blue-200 p-4 sm:p-5 rounded-2xl">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-blue-950 flex items-center gap-1.5">
+                      <Building2 className="w-4 h-4 text-blue-700" />
+                      6306 Riskli Yapı Tespiti Hizmet Bedeli Hesaplaması
                     </span>
-                    <span className="text-[11px] font-bold bg-blue-100 text-blue-900 px-2 py-0.5 rounded">
-                      Götürü / Sabit Fiyat
+                    <span className="text-[11px] font-bold bg-blue-100 text-blue-900 px-2.5 py-0.5 rounded-full border border-blue-200">
+                      Bina Sayısı × Bina Başı Fiyat
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600 mb-3">
-                    6306 sayılı kanun kapsamında kat sayısı ile çarpım yapılmaz; tek ve net bir toplam teklif bedeli girilir. Bina kat sayısı (<strong>{formData.property.totalFloors || 'Belirtilmemiş'} Kat</strong>) raporda ve konu başlığında yer alır.
+                  <p className="text-xs text-slate-600 mb-4">
+                    6306 sayılı kanun kapsamında teklif bedeli <strong>Bina Sayısı (Adet) × Bina Başı Birim Fiyat</strong> formülü ile hesaplanır. Kat sayısı ({formData.property.totalFloors || 'Belirtilmemiş'} Kat) raporda teknik bilgi olarak yer alır.
                   </p>
 
-                  <div className="max-w-md">
-                    <label className="block text-xs font-bold text-slate-800 uppercase mb-1">
-                      Temel Hizmet Bedeli (KDV Hariç - TL) *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="500"
-                        required
-                        value={formData.pricing.unitPrice}
-                        onChange={(e) => updatePricing('unitPrice', Number(e.target.value) || 0)}
-                        className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-400 rounded-xl text-base font-black font-mono text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
-                        placeholder="Örn: 166667"
-                      />
-                      <span className="absolute right-3.5 top-3 text-xs font-bold text-slate-400 font-mono">
-                        TL + KDV
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* 1. Bina / Yapı Sayısı */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 uppercase mb-1">
+                        Bina / Yapı Sayısı (Adet) *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          value={formData.property.buildingCount || 1}
+                          onChange={(e) => updatePricing('buildingCount', Math.max(1, Number(e.target.value) || 1))}
+                          className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-300 rounded-xl text-base font-black font-mono text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                          placeholder="1"
+                        />
+                        <span className="absolute right-3.5 top-3 text-xs font-bold text-slate-400 font-mono">
+                          Adet Bina
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 2. Bina Başı Birim Fiyat */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 uppercase mb-1">
+                        Bina Başı Birim Fiyat (KDV Hariç) *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="500"
+                          required
+                          value={formData.pricing.unitPrice}
+                          onChange={(e) => updatePricing('unitPrice', Number(e.target.value) || 0)}
+                          className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-400 rounded-xl text-base font-black font-mono text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                          placeholder="Örn: 45000"
+                        />
+                        <span className="absolute right-3.5 top-3 text-xs font-bold text-slate-400 font-mono">
+                          TL / Bina
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 3. Hesaplanan Temel Hizmet Bedeli */}
+                    <div className="sm:col-span-2 lg:col-span-1 bg-white p-3.5 rounded-xl border border-blue-200 flex flex-col justify-center shadow-xs">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase block">
+                        Hesaplanan Temel Hizmet Bedeli:
+                      </span>
+                      <div className="text-lg font-black font-mono text-blue-950 mt-0.5">
+                        {((formData.property.buildingCount || 1) * (formData.pricing.unitPrice || 0)).toLocaleString('tr-TR')} TL
+                      </div>
+                      <span className="text-[10.5px] text-slate-600 font-medium">
+                        ({formData.property.buildingCount || 1} Bina × {(formData.pricing.unitPrice || 0).toLocaleString('tr-TR')} TL)
                       </span>
                     </div>
                   </div>
@@ -2054,8 +2109,8 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                 ) : formData.type === 'riskli_yapi' ? (
                   <p className="text-xs text-slate-500 mt-0.5 font-medium text-slate-600">
                     {formData.pricing.kollukKuvvetiIncluded
-                      ? `(Temel Bedel: ${formData.pricing.unitPrice.toLocaleString('tr-TR')} TL + Kolluk Kuvveti: ${(formData.pricing.kollukKuvvetiPrice || 25000).toLocaleString('tr-TR')} TL)`
-                      : '(6306 Sayılı Kanun Kapsamında Götürü Sabit Hizmet Bedeli)'}
+                      ? `(${formData.property.buildingCount || 1} Adet Bina × ${formData.pricing.unitPrice.toLocaleString('tr-TR')} TL/Bina = ${((formData.property.buildingCount || 1) * formData.pricing.unitPrice).toLocaleString('tr-TR')} TL + Kolluk Kuvveti: ${(formData.pricing.kollukKuvvetiPrice || 25000).toLocaleString('tr-TR')} TL)`
+                      : `(${formData.property.buildingCount || 1} Adet Bina × ${formData.pricing.unitPrice.toLocaleString('tr-TR')} TL / Bina)`}
                   </p>
                 ) : formData.pricing.pricingMethod === 'kat_basi' && (
                   <p className="text-xs text-slate-500 mt-0.5">

@@ -116,7 +116,7 @@ export interface GuclendirmeParams {
 
 export interface PricingInfo {
   unitPrice: number;
-  pricingMethod: 'toplam_sabit' | 'kat_basi';
+  pricingMethod: 'toplam_sabit' | 'kat_basi' | 'bina_basi';
   subtotal: number;
   vatRate: number; // e.g. 20, 10, or 0
   discount: number;
@@ -126,6 +126,7 @@ export interface PricingInfo {
   kollukKuvvetiPrice?: number;
   isWithoutVat?: boolean; // Faturasız işlem (KDV uygulanmaz)
   invoiceType?: 'faturali' | 'faturasiz'; // Fatura seçeneği
+  buildingUnitPrice?: number; // Bina başı birim fiyat
 }
 
 export interface PaymentTerms {
