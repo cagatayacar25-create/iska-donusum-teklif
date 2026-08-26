@@ -157,10 +157,10 @@ export async function exportProposalToPdf(elementId: string, filename: string): 
     const clonedEl = element.cloneNode(true) as HTMLElement;
     clonedEl.style.width = '794px';
     clonedEl.style.maxWidth = '794px';
-    clonedEl.style.padding = '32px';
+    clonedEl.style.padding = '0px';
     clonedEl.style.boxShadow = 'none';
     clonedEl.style.border = 'none';
-    clonedEl.style.margin = '0';
+    clonedEl.style.margin = '0px';
     clonedEl.style.backgroundColor = '#ffffff';
 
     // Apply exact computed RGB colors from live DOM

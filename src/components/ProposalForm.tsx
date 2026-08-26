@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Proposal, ProposalType, ScopeItem, GuclendirmeParams, PaymentStatus, PaymentInstallment } from '../types';
 import { PROPOSAL_TYPE_LABELS, DEFAULT_SCOPES, DEFAULT_GUCLENDIRME_PARAMS, PAYMENT_STATUS_LABELS } from '../data/defaultTemplates';
-import { generateDefaultInstallments } from '../utils/storage';
+import { generateDefaultInstallments, sanitizeProposal } from '../utils/storage';
 import { CITIES, ISTANBUL_DISTRICTS, ISTANBUL_NEIGHBORHOODS } from '../data/istanbulData';
 import { 
   Building2, 
@@ -79,7 +79,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
   onCancel,
   onOpenCalculator,
 }) => {
-  const [formData, setFormData] = useState<Proposal>(proposal);
+  const [formData, setFormData] = useState<Proposal>(() => sanitizeProposal(proposal));
   const [activeTab, setActiveTab] = useState<'client' | 'property' | 'scope' | 'pricing'>('property');
   const [newScopeTitle, setNewScopeTitle] = useState('');
   const [newScopeDesc, setNewScopeDesc] = useState('');
@@ -101,7 +101,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
 
   // Sync state if proposal prop changes
   useEffect(() => {
-    let prop = { ...proposal };
+    let prop = sanitizeProposal(proposal);
     if (!prop.property?.city) {
       prop = {
         ...prop,
@@ -110,53 +110,6 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
           city: 'İstanbul',
           district: prop.property?.district || 'Kadıköy',
           neighborhood: prop.property?.neighborhood ?? '',
-        },
-      };
-    }
-    if (prop.type === 'riskli_yapi') {
-      const bCount = Math.max(1, Number(prop.property?.buildingCount) || 1);
-      let uPrice = Number(prop.pricing?.unitPrice);
-      if (!uPrice || uPrice <= 0) {
-        uPrice = 45000;
-      }
-      const kolluk = Boolean(prop.pricing?.kollukKuvvetiIncluded);
-      const kollukP = kolluk ? Number(prop.pricing?.kollukKuvvetiPrice ?? 25000) : 0;
-      const baseSub = Math.round(uPrice * bCount);
-      const sub = baseSub + kollukP;
-      const disc = Math.max(0, Number(prop.pricing?.discount) || 0);
-      const afterDisc = Math.max(0, sub - disc);
-      const isWithoutVat = Boolean(prop.pricing?.isWithoutVat || prop.pricing?.invoiceType === 'faturasiz' || prop.pricing?.vatRate === 0);
-      const vatR = isWithoutVat ? 0 : (Number(prop.pricing?.vatRate) || 20);
-      const tot = isWithoutVat ? afterDisc : Math.round(afterDisc * (1 + vatR / 100));
-
-      const updatedInst = generateDefaultInstallments(prop.type, tot, prop.paymentTerms?.advanceRatio || 30).map((newInst, idx) => {
-        const existingInst = prop.paymentTerms?.installments?.[idx];
-        return {
-          ...newInst,
-          isPaid: existingInst?.isPaid || false,
-          paidAt: existingInst?.paidAt,
-          paymentMethod: existingInst?.paymentMethod || 'havale_eft',
-        };
-      });
-
-      prop = {
-        ...prop,
-        property: {
-          ...prop.property,
-          buildingCount: bCount,
-        },
-        pricing: {
-          ...prop.pricing,
-          unitPrice: uPrice,
-          pricingMethod: 'bina_basi',
-          subtotal: sub,
-          vatRate: vatR,
-          isWithoutVat,
-          totalAmount: tot,
-        },
-        paymentTerms: {
-          ...prop.paymentTerms,
-          installments: updatedInst,
         },
       };
     }

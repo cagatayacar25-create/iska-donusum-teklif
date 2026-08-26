@@ -51,35 +51,97 @@ export function saveCompanyProfile(profile: CompanyProfile): void {
   }
 }
 
+export function sanitizeProposal(p: Proposal): Proposal {
+  if (!p) return p;
+  const prop: Proposal = JSON.parse(JSON.stringify(p));
+
+  if (prop.type === 'riskli_yapi') {
+    const buildingCount = Math.max(1, Number(prop.property?.buildingCount) || 1);
+    let unitPrice = Number(prop.pricing?.unitPrice);
+    if (!unitPrice || unitPrice <= 0) {
+      unitPrice = 45000;
+    }
+    const kollukIncluded = Boolean(prop.pricing?.kollukKuvvetiIncluded);
+    const kollukPrice = kollukIncluded ? Number(prop.pricing?.kollukKuvvetiPrice ?? 25000) : 0;
+    const baseSubtotal = Math.round(unitPrice * buildingCount);
+    const subtotal = baseSubtotal + kollukPrice;
+    const discount = Math.max(0, Number(prop.pricing?.discount) || 0);
+    const afterDiscount = Math.max(0, subtotal - discount);
+    const isWithoutVat = Boolean(
+      prop.pricing?.isWithoutVat || 
+      prop.pricing?.invoiceType === 'faturasiz' || 
+      prop.pricing?.vatRate === 0
+    );
+    const vatRate = isWithoutVat ? 0 : (Number(prop.pricing?.vatRate) || 20);
+    const vatAmount = (afterDiscount * vatRate) / 100;
+    const totalAmount = isWithoutVat ? afterDiscount : Math.round(afterDiscount + vatAmount);
+
+    const advanceRatio = prop.paymentTerms?.advanceRatio || 30;
+    const defaultInst = generateDefaultInstallments('riskli_yapi', totalAmount, advanceRatio);
+    const installments = defaultInst.map((inst, idx) => {
+      const old = prop.paymentTerms?.installments?.[idx];
+      return {
+        ...inst,
+        isPaid: old?.isPaid || false,
+        paidAt: old?.paidAt,
+        paymentMethod: old?.paymentMethod || 'havale_eft',
+      };
+    });
+
+    prop.property = {
+      ...prop.property,
+      buildingCount,
+    };
+    prop.pricing = {
+      ...prop.pricing,
+      pricingMethod: 'bina_basi',
+      unitPrice,
+      subtotal,
+      discount,
+      isWithoutVat,
+      vatRate,
+      totalAmount,
+    };
+    prop.paymentTerms = {
+      ...prop.paymentTerms,
+      installments,
+    };
+  }
+
+  return prop;
+}
+
 export function getProposals(): Proposal[] {
   try {
     const saved = localStorage.getItem(PROPOSALS_KEY);
     if (saved) {
       const parsed: Proposal[] = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.map(sanitizeProposal);
       }
     }
   } catch (e) {
     console.error('Error loading proposals from cache:', e);
   }
   // Default to the 14 complete initial proposals on first run
-  return INITIAL_PROPOSALS;
+  return INITIAL_PROPOSALS.map(sanitizeProposal);
 }
 
 export function saveProposals(proposals: Proposal[]): void {
   try {
-    localStorage.setItem(PROPOSALS_KEY, JSON.stringify(proposals));
+    const sanitized = proposals.map(sanitizeProposal);
+    localStorage.setItem(PROPOSALS_KEY, JSON.stringify(sanitized));
   } catch (e) {
     console.error('Error caching proposals:', e);
   }
 }
 
 export function saveProposal(proposal: Proposal): void {
+  const sanitized = sanitizeProposal(proposal);
   const proposals = getProposals();
-  const existingIndex = proposals.findIndex((p) => p.id === proposal.id);
+  const existingIndex = proposals.findIndex((p) => p.id === sanitized.id);
   const updatedProposal: Proposal = {
-    ...proposal,
+    ...sanitized,
     updatedAt: new Date().toISOString(),
   };
 

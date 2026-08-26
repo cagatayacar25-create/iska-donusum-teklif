@@ -9,7 +9,8 @@ import {
   saveCompanyProfile, 
   createEmptyProposal,
   getInitialMockProposals,
-  saveProposals
+  saveProposals,
+  sanitizeProposal
 } from './utils/storage';
 
 import { Header } from './components/Header';
@@ -89,8 +90,9 @@ export default function App() {
     const unsubProposals = subscribeProposalsFromCloud((cloudList, isSnapshotEmpty) => {
       if (!isSnapshotEmpty && cloudList.length > 0) {
         // Cloud has active proposals -> Cloud is the single real-time source of truth!
-        setProposals(cloudList);
-        saveProposals(cloudList);
+        const sanitizedList = cloudList.map(sanitizeProposal);
+        setProposals(sanitizedList);
+        saveProposals(sanitizedList);
         setIsCloudSynced(true);
       } else if (isSnapshotEmpty) {
         // Cloud collection is currently empty
