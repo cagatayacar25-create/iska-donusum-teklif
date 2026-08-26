@@ -516,7 +516,7 @@ ${companyProfile.name}
                               proposal.paymentTerms.installments.map((inst, idx) => (
                                 <span key={inst.id || idx}>
                                   {idx > 0 ? ', ' : ''}
-                                  {inst.name || `${idx + 1}. Taksit`} (<strong>%{inst.percentage}</strong> - ₺{(inst.amount || 0).toLocaleString('tr-TR')})
+                                  {inst.name || `${idx + 1}. Taksit`} (<strong>%{inst.percentage}</strong> - ₺{(Math.round(proposal.pricing.totalAmount * (inst.percentage / 100)) || inst.amount || 0).toLocaleString('tr-TR')})
                                 </span>
                               ))
                             ) : (
@@ -1664,7 +1664,7 @@ ${companyProfile.name}
                             proposal.paymentTerms.installments.map((inst, idx) => (
                               <span key={inst.id || idx}>
                                 {idx > 0 ? ', ' : ''}
-                                {inst.name || `${idx + 1}. Taksit`} (<strong>%{inst.percentage}</strong> - ₺{(inst.amount || 0).toLocaleString('tr-TR')})
+                                {inst.name || `${idx + 1}. Taksit`} (<strong>%{inst.percentage}</strong> - ₺{(Math.round(proposal.pricing.totalAmount * (inst.percentage / 100)) || inst.amount || 0).toLocaleString('tr-TR')})
                               </span>
                             ))
                           ) : (

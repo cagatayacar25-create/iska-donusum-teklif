@@ -16,29 +16,37 @@ export const QuickPriceCalculatorModal: React.FC<QuickPriceCalculatorProps> = ({
 }) => {
   const [selectedType, setSelectedType] = useState<ProposalType>('riskli_yapi');
   const [floors, setFloors] = useState<number>(5);
-  const [ratePerFloor, setRatePerFloor] = useState<number>(7500);
+  const [buildingCount, setBuildingCount] = useState<number>(1);
+  const [ratePerUnit, setRatePerUnit] = useState<number>(45000);
 
   if (!isOpen) return null;
 
   const handleTypeSelect = (type: ProposalType) => {
     setSelectedType(type);
-    if (type === 'orta_katli_risk') {
+    if (type === 'riskli_yapi') {
+      setBuildingCount(1);
+      setRatePerUnit(45000);
+    } else if (type === 'orta_katli_risk') {
       if (floors < 10) setFloors(10);
-      setRatePerFloor(30000);
+      setRatePerUnit(30000);
     } else if (type === 'performans_raporu') {
-      setRatePerFloor(30000);
+      setRatePerUnit(30000);
     } else {
-      setRatePerFloor(7500);
+      setRatePerUnit(45000);
     }
   };
 
-  let multiplier = 1;
-  if (selectedType === 'orta_katli_risk') multiplier = 1.0; // Kat başı 30.000 TL olarak direkt hesaplanır
-  if (selectedType === 'performans_raporu') multiplier = 1.0;
-  
+  const isRiskli = selectedType === 'riskli_yapi';
   const effectiveFloors = selectedType === 'orta_katli_risk' ? Math.max(10, floors) : floors;
-  const estimatedPrice = Math.round(effectiveFloors * ratePerFloor * multiplier);
-  const calcExplain = `${effectiveFloors} Kat x ${ratePerFloor.toLocaleString('tr-TR')} TL (Kat Başı)`;
+  const effectiveBuildings = Math.max(1, buildingCount);
+  
+  const estimatedPrice = isRiskli
+    ? Math.round(effectiveBuildings * ratePerUnit)
+    : Math.round(effectiveFloors * ratePerUnit);
+
+  const calcExplain = isRiskli
+    ? `${effectiveBuildings} Adet Bina × ${ratePerUnit.toLocaleString('tr-TR')} TL (Bina Başı)`
+    : `${effectiveFloors} Kat × ${ratePerUnit.toLocaleString('tr-TR')} TL (Kat Başı)`;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -52,7 +60,7 @@ export const QuickPriceCalculatorModal: React.FC<QuickPriceCalculatorProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-base text-slate-100">Saha Fiyat Tahmin Robotu</h3>
-              <p className="text-xs text-slate-400">Kat sayısına göre hızlı teklif tutarı hesaplayıcı</p>
+              <p className="text-xs text-slate-400">Teklif türüne göre hızlı teklif tutarı hesaplayıcı</p>
             </div>
           </div>
           <button
@@ -95,33 +103,63 @@ export const QuickPriceCalculatorModal: React.FC<QuickPriceCalculatorProps> = ({
 
           {/* Inputs */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Toplam Kat Sayısı
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="30"
-                  value={floors}
-                  onChange={(e) => setFloors(Number(e.target.value) || 1)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
-                />
+            {isRiskli ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Bina / Yapı Sayısı (Adet)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={buildingCount}
+                    onChange={(e) => setBuildingCount(Math.max(1, Number(e.target.value) || 1))}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Bina Başı Birim Fiyat (TL)
+                  </label>
+                  <input
+                    type="number"
+                    step="500"
+                    value={ratePerUnit}
+                    onChange={(e) => setRatePerUnit(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none font-mono"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Kat Başı Birim (TL)
-                </label>
-                <input
-                  type="number"
-                  step="500"
-                  value={ratePerFloor}
-                  onChange={(e) => setRatePerFloor(Number(e.target.value) || 0)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
-                />
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Toplam Kat Sayısı
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={floors}
+                    onChange={(e) => setFloors(Number(e.target.value) || 1)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Kat Başı Birim (TL)
+                  </label>
+                  <input
+                    type="number"
+                    step="500"
+                    value={ratePerUnit}
+                    onChange={(e) => setRatePerUnit(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none font-mono"
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Result Banner */}

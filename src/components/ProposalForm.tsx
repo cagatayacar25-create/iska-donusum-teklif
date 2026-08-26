@@ -113,6 +113,53 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
         },
       };
     }
+    if (prop.type === 'riskli_yapi') {
+      const bCount = Math.max(1, Number(prop.property?.buildingCount) || 1);
+      let uPrice = Number(prop.pricing?.unitPrice);
+      if (!uPrice || uPrice <= 0) {
+        uPrice = 45000;
+      }
+      const kolluk = Boolean(prop.pricing?.kollukKuvvetiIncluded);
+      const kollukP = kolluk ? Number(prop.pricing?.kollukKuvvetiPrice ?? 25000) : 0;
+      const baseSub = Math.round(uPrice * bCount);
+      const sub = baseSub + kollukP;
+      const disc = Math.max(0, Number(prop.pricing?.discount) || 0);
+      const afterDisc = Math.max(0, sub - disc);
+      const isWithoutVat = Boolean(prop.pricing?.isWithoutVat || prop.pricing?.invoiceType === 'faturasiz' || prop.pricing?.vatRate === 0);
+      const vatR = isWithoutVat ? 0 : (Number(prop.pricing?.vatRate) || 20);
+      const tot = isWithoutVat ? afterDisc : Math.round(afterDisc * (1 + vatR / 100));
+
+      const updatedInst = generateDefaultInstallments(prop.type, tot, prop.paymentTerms?.advanceRatio || 30).map((newInst, idx) => {
+        const existingInst = prop.paymentTerms?.installments?.[idx];
+        return {
+          ...newInst,
+          isPaid: existingInst?.isPaid || false,
+          paidAt: existingInst?.paidAt,
+          paymentMethod: existingInst?.paymentMethod || 'havale_eft',
+        };
+      });
+
+      prop = {
+        ...prop,
+        property: {
+          ...prop.property,
+          buildingCount: bCount,
+        },
+        pricing: {
+          ...prop.pricing,
+          unitPrice: uPrice,
+          pricingMethod: 'bina_basi',
+          subtotal: sub,
+          vatRate: vatR,
+          isWithoutVat,
+          totalAmount: tot,
+        },
+        paymentTerms: {
+          ...prop.paymentTerms,
+          installments: updatedInst,
+        },
+      };
+    }
     if (prop.type === 'statik_guclendirme' && !prop.guclendirme) {
       prop = {
         ...prop,
@@ -339,7 +386,51 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
       alert('Orta katlı bina riskli yapı tespiti için bina en az 10 katlı olmalıdır! Lütfen kat sayısını en az 10 olarak düzenleyiniz.');
       return;
     }
-    onSave(formData, previewAfterSave);
+
+    let toSave = { ...formData };
+    if (toSave.type === 'riskli_yapi') {
+      const bCount = Math.max(1, Number(toSave.property.buildingCount) || 1);
+      const uPrice = Number(toSave.pricing.unitPrice) || 45000;
+      const kolluk = Boolean(toSave.pricing.kollukKuvvetiIncluded);
+      const kollukP = kolluk ? Number(toSave.pricing.kollukKuvvetiPrice ?? 25000) : 0;
+      const baseSub = Math.round(uPrice * bCount);
+      const sub = baseSub + kollukP;
+      const disc = Math.max(0, Number(toSave.pricing.discount) || 0);
+      const afterDisc = Math.max(0, sub - disc);
+      const isWithoutVat = Boolean(toSave.pricing.isWithoutVat || toSave.pricing.invoiceType === 'faturasiz' || toSave.pricing.vatRate === 0);
+      const vatR = isWithoutVat ? 0 : (Number(toSave.pricing.vatRate) || 20);
+      const tot = isWithoutVat ? afterDisc : Math.round(afterDisc * (1 + vatR / 100));
+
+      const newInst = generateDefaultInstallments(toSave.type, tot, toSave.paymentTerms?.advanceRatio || 30).map((inst, idx) => {
+        const oldInst = toSave.paymentTerms?.installments?.[idx];
+        return {
+          ...inst,
+          isPaid: oldInst?.isPaid || false,
+          paidAt: oldInst?.paidAt,
+          paymentMethod: oldInst?.paymentMethod || 'havale_eft',
+        };
+      });
+
+      toSave.property = {
+        ...toSave.property,
+        buildingCount: bCount,
+      };
+      toSave.pricing = {
+        ...toSave.pricing,
+        pricingMethod: 'bina_basi',
+        unitPrice: uPrice,
+        subtotal: sub,
+        vatRate: vatR,
+        isWithoutVat,
+        totalAmount: tot,
+      };
+      toSave.paymentTerms = {
+        ...toSave.paymentTerms,
+        installments: newInst,
+      };
+    }
+
+    onSave(toSave, previewAfterSave);
   };
 
   // Recalculate totals whenever pricing fields, floor count, building count, or method change
@@ -374,7 +465,9 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
         newPricing.invoiceType = rate === 0 ? 'faturasiz' : 'faturali';
       }
 
-      const unitPrice = field === 'unitPrice' ? Number(value) || 0 : newPricing.unitPrice || 0;
+      const unitPrice = field === 'unitPrice' 
+        ? (Number(value) || 0) 
+        : (newPricing.unitPrice !== undefined && Number(newPricing.unitPrice) > 0 ? Number(newPricing.unitPrice) : 45000);
       const method = field === 'pricingMethod' ? value : newPricing.pricingMethod;
       const isRiskli = prev.type === 'riskli_yapi';
       const kollukIncluded = field === 'kollukKuvvetiIncluded' 
@@ -391,7 +484,7 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
       let baseSubtotal = 0;
       if (isRiskli) {
         // Riskli Yapı: Bina Sayısı × Bina Başı Birim Fiyat
-        baseSubtotal = Math.round(unitPrice * (updatedBuildingCount || 1));
+        baseSubtotal = Math.round(unitPrice * updatedBuildingCount);
       } else if (method === 'kat_basi') {
         baseSubtotal = Math.round(unitPrice * (updatedFloors || 1));
       } else {
@@ -416,6 +509,18 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
       const vatAmount = (afterDiscount * vatRate) / 100;
       newPricing.totalAmount = Math.round(afterDiscount + vatAmount);
 
+      // Recalculate installments so payment conditions match the new total amount
+      const advRatio = prev.paymentTerms?.advanceRatio || (prev.type === 'statik_guclendirme' ? 50 : 30);
+      const updatedInstallments = generateDefaultInstallments(prev.type, newPricing.totalAmount, advRatio).map((newInst, idx) => {
+        const existingInst = prev.paymentTerms?.installments?.[idx];
+        return {
+          ...newInst,
+          isPaid: existingInst?.isPaid || false,
+          paidAt: existingInst?.paidAt,
+          paymentMethod: existingInst?.paymentMethod || 'havale_eft',
+        };
+      });
+
       // Sync scope item ry10 with kollukKuvvetiIncluded if it exists in scopeItems
       let updatedScopeItems = prev.scopeItems;
       if (field === 'kollukKuvvetiIncluded' && isRiskli) {
@@ -432,7 +537,11 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
         property: {
           ...prev.property,
           totalFloors: field === 'floors' ? (updatedFloors || '') : prev.property.totalFloors,
-          buildingCount: field === 'buildingCount' ? updatedBuildingCount : (prev.property.buildingCount || 1),
+          buildingCount: updatedBuildingCount,
+        },
+        paymentTerms: {
+          ...prev.paymentTerms,
+          installments: updatedInstallments,
         },
         scopeItems: updatedScopeItems,
         pricing: newPricing,
@@ -453,14 +562,23 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
         newPricing.kollukKuvvetiIncluded = nextIncluded;
         const kollukPrice = Number(newPricing.kollukKuvvetiPrice ?? 25000);
         newPricing.kollukKuvvetiPrice = kollukPrice;
-        const baseSubtotal = Math.round(newPricing.unitPrice || 0);
+        const bCount = Math.max(1, Number(prev.property.buildingCount) || 1);
+        const uPrice = Number(newPricing.unitPrice) || 45000;
+        const baseSubtotal = Math.round(uPrice * bCount);
         newPricing.subtotal = nextIncluded ? baseSubtotal + kollukPrice : baseSubtotal;
         const afterDiscount = Math.max(0, newPricing.subtotal - (newPricing.discount || 0));
-        const vatAmount = (afterDiscount * (newPricing.vatRate || 0)) / 100;
+        const vatRate = newPricing.isWithoutVat ? 0 : (newPricing.vatRate || 0);
+        const vatAmount = (afterDiscount * vatRate) / 100;
         newPricing.totalAmount = Math.round(afterDiscount + vatAmount);
+
+        const newInst = generateDefaultInstallments(prev.type, newPricing.totalAmount, prev.paymentTerms?.advanceRatio || 30);
 
         return {
           ...prev,
+          paymentTerms: {
+            ...prev.paymentTerms,
+            installments: newInst,
+          },
           scopeItems: updatedScope,
           pricing: newPricing,
         };
