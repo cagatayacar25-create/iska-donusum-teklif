@@ -144,89 +144,8 @@ export async function exportProposalToPdf(elementId: string, filename: string): 
       return false;
     }
 
-    // 1. Create container positioned fixed at (0, 0) behind viewport (z-index -99999)
-    const cloneContainer = document.createElement('div');
-    cloneContainer.style.position = 'fixed';
-    cloneContainer.style.top = '0px';
-    cloneContainer.style.left = '0px';
-    cloneContainer.style.width = '794px';
-    cloneContainer.style.backgroundColor = '#ffffff';
-    cloneContainer.style.zIndex = '-99999';
-    cloneContainer.style.overflow = 'visible';
+    const pageElements = Array.from(element.querySelectorAll<HTMLElement>('.pdf-page'));
 
-    const clonedEl = element.cloneNode(true) as HTMLElement;
-    clonedEl.style.width = '794px';
-    clonedEl.style.maxWidth = '794px';
-    clonedEl.style.padding = '0px';
-    clonedEl.style.boxShadow = 'none';
-    clonedEl.style.border = 'none';
-    clonedEl.style.margin = '0px';
-    clonedEl.style.backgroundColor = '#ffffff';
-
-    // Apply exact computed RGB colors from live DOM
-    applyComputedColorsRecursively(element, clonedEl);
-
-    // Fix images in clone
-    const images = clonedEl.querySelectorAll('img');
-    images.forEach((img) => {
-      if (!img.src || (!img.src.startsWith('data:') && !img.src.startsWith('blob:'))) {
-        img.src = ISKA_LOGO_DATA_URL;
-      }
-    });
-
-    cloneContainer.appendChild(clonedEl);
-    document.body.appendChild(cloneContainer);
-
-    // Wait for clone DOM to attach
-    await new Promise((resolve) => setTimeout(resolve, 150));
-
-    // 2. Capture canvas with html2canvas and sanitize clonedDoc CSS for oklch / oklab
-    const canvas = await html2canvas(clonedEl, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: false,
-      logging: false,
-      backgroundColor: '#ffffff',
-      x: 0,
-      y: 0,
-      scrollX: 0,
-      scrollY: 0,
-      width: 794,
-      height: clonedEl.scrollHeight,
-      onclone: (clonedDoc) => {
-        // Sanitize all style tags in the cloned document
-        const styleTags = clonedDoc.querySelectorAll('style');
-        styleTags.forEach((styleTag) => {
-          if (styleTag.textContent && (styleTag.textContent.includes('oklch') || styleTag.textContent.includes('oklab'))) {
-            styleTag.textContent = sanitizeCssForHtml2Canvas(styleTag.textContent);
-          }
-        });
-
-        // Sanitize inline styles on all elements
-        const styledElements = clonedDoc.querySelectorAll('[style]');
-        styledElements.forEach((el) => {
-          const styleAttr = el.getAttribute('style');
-          if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab'))) {
-            el.setAttribute('style', sanitizeCssForHtml2Canvas(styleAttr));
-          }
-        });
-      },
-    });
-
-    // Clean up clone element immediately
-    if (document.body.contains(cloneContainer)) {
-      document.body.removeChild(cloneContainer);
-    }
-
-    let imgData: string;
-    try {
-      imgData = canvas.toDataURL('image/jpeg', 0.95);
-    } catch (e) {
-      console.warn('JPEG export fallback to PNG:', e);
-      imgData = canvas.toDataURL('image/png');
-    }
-
-    // 3. Generate jsPDF
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -234,29 +153,168 @@ export async function exportProposalToPdf(elementId: string, filename: string): 
       compress: true,
     });
 
-    const pdfWidth = pdf.internal.pageSize.getWidth(); // 210mm
-    const pdfHeight = pdf.internal.pageSize.getHeight(); // 297mm
-    const imgWidth = pdfWidth;
-    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+    if (pageElements.length > 0) {
+      // Process each page individually for exact 1:1 A4 alignment
+      for (let i = 0; i < pageElements.length; i++) {
+        const pageEl = pageElements[i];
 
-    let heightLeft = imgHeight;
-    let position = 0;
+        const cloneContainer = document.createElement('div');
+        cloneContainer.style.position = 'fixed';
+        cloneContainer.style.top = '0px';
+        cloneContainer.style.left = '0px';
+        cloneContainer.style.width = '794px';
+        cloneContainer.style.height = '1123px';
+        cloneContainer.style.backgroundColor = '#ffffff';
+        cloneContainer.style.zIndex = '-99999';
+        cloneContainer.style.overflow = 'hidden';
 
-    // Page 1
-    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-    heightLeft -= pdfHeight;
+        const clonedPage = pageEl.cloneNode(true) as HTMLElement;
+        clonedPage.style.width = '794px';
+        clonedPage.style.maxWidth = '794px';
+        clonedPage.style.height = '1123px';
+        clonedPage.style.maxHeight = '1123px';
+        clonedPage.style.minHeight = '1123px';
+        clonedPage.style.boxShadow = 'none';
+        clonedPage.style.border = 'none';
+        clonedPage.style.margin = '0px';
+        clonedPage.style.backgroundColor = '#ffffff';
+        clonedPage.style.boxSizing = 'border-box';
 
-    // Multi-page handling
-    while (heightLeft > 3) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        // Apply exact computed RGB colors from live DOM
+        applyComputedColorsRecursively(pageEl, clonedPage);
+
+        // Fix images in clone
+        const images = clonedPage.querySelectorAll('img');
+        images.forEach((img) => {
+          if (!img.src || (!img.src.startsWith('data:') && !img.src.startsWith('blob:'))) {
+            img.src = ISKA_LOGO_DATA_URL;
+          }
+        });
+
+        cloneContainer.appendChild(clonedPage);
+        document.body.appendChild(cloneContainer);
+
+        // Wait for clone DOM to attach
+        await new Promise((resolve) => setTimeout(resolve, 80));
+
+        const canvas = await html2canvas(clonedPage, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: false,
+          logging: false,
+          backgroundColor: '#ffffff',
+          width: 794,
+          height: 1123,
+          onclone: (clonedDoc) => {
+            const styleTags = clonedDoc.querySelectorAll('style');
+            styleTags.forEach((styleTag) => {
+              if (styleTag.textContent && (styleTag.textContent.includes('oklch') || styleTag.textContent.includes('oklab'))) {
+                styleTag.textContent = sanitizeCssForHtml2Canvas(styleTag.textContent);
+              }
+            });
+
+            const styledElements = clonedDoc.querySelectorAll('[style]');
+            styledElements.forEach((el) => {
+              const styleAttr = el.getAttribute('style');
+              if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab'))) {
+                el.setAttribute('style', sanitizeCssForHtml2Canvas(styleAttr));
+              }
+            });
+          },
+        });
+
+        if (document.body.contains(cloneContainer)) {
+          document.body.removeChild(cloneContainer);
+        }
+
+        let imgData: string;
+        try {
+          imgData = canvas.toDataURL('image/jpeg', 0.95);
+        } catch {
+          imgData = canvas.toDataURL('image/png');
+        }
+
+        if (i > 0) {
+          pdf.addPage('a4', 'portrait');
+        }
+        pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      }
+    } else {
+      // Fallback if no .pdf-page class found
+      const cloneContainer = document.createElement('div');
+      cloneContainer.style.position = 'fixed';
+      cloneContainer.style.top = '0px';
+      cloneContainer.style.left = '0px';
+      cloneContainer.style.width = '794px';
+      cloneContainer.style.backgroundColor = '#ffffff';
+      cloneContainer.style.zIndex = '-99999';
+      cloneContainer.style.overflow = 'visible';
+
+      const clonedEl = element.cloneNode(true) as HTMLElement;
+      clonedEl.style.width = '794px';
+      clonedEl.style.maxWidth = '794px';
+      clonedEl.style.padding = '0px';
+      clonedEl.style.boxShadow = 'none';
+      clonedEl.style.border = 'none';
+      clonedEl.style.margin = '0px';
+      clonedEl.style.backgroundColor = '#ffffff';
+
+      applyComputedColorsRecursively(element, clonedEl);
+
+      const images = clonedEl.querySelectorAll('img');
+      images.forEach((img) => {
+        if (!img.src || (!img.src.startsWith('data:') && !img.src.startsWith('blob:'))) {
+          img.src = ISKA_LOGO_DATA_URL;
+        }
+      });
+
+      cloneContainer.appendChild(clonedEl);
+      document.body.appendChild(cloneContainer);
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      const canvas = await html2canvas(clonedEl, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        backgroundColor: '#ffffff',
+        width: 794,
+        height: clonedEl.scrollHeight,
+        onclone: (clonedDoc) => {
+          const styleTags = clonedDoc.querySelectorAll('style');
+          styleTags.forEach((styleTag) => {
+            if (styleTag.textContent && (styleTag.textContent.includes('oklch') || styleTag.textContent.includes('oklab'))) {
+              styleTag.textContent = sanitizeCssForHtml2Canvas(styleTag.textContent);
+            }
+          });
+        },
+      });
+
+      if (document.body.contains(cloneContainer)) {
+        document.body.removeChild(cloneContainer);
+      }
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
       heightLeft -= pdfHeight;
+
+      while (heightLeft > 3) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
     }
 
     const cleanFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
 
-    // 4. Trigger direct file download
     try {
       pdf.save(cleanFilename);
     } catch (saveErr) {
