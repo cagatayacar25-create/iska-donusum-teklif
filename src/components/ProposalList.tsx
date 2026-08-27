@@ -29,7 +29,8 @@ import {
   CreditCard,
   FolderCheck,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Percent
 } from 'lucide-react';
 
 interface ProposalListProps {
@@ -68,25 +69,109 @@ export const ProposalList: React.FC<ProposalListProps> = ({
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedPaymentFilter, setSelectedPaymentFilter] = useState<string>('all');
 
-  // Overall Financial & Payment Calculations
-  const totalApprovedRevenue = proposals
-    .filter((p) => p.status === 'onaylandi')
-    .reduce((sum, p) => sum + (p.pricing.totalAmount || 0), 0);
+  // State for Financial View Mode (KDV Dahil vs KDV Hariç & Tüm Zamanlar vs Bu Ay)
+  const [showNetWithoutVat, setShowNetWithoutVat] = useState(false);
+  const [timePeriodMode, setTimePeriodMode] = useState<'all' | 'this_month'>('all');
 
-  let totalCollectedAmount = 0;
-  let totalRemainingReceivable = 0;
+  // Helper for Net & VAT
+  const isWithoutVatProposal = (p: Proposal) => {
+    return Boolean(
+      p.pricing?.isWithoutVat || 
+      p.pricing?.invoiceType === 'faturasiz' || 
+      p.pricing?.vatRate === 0
+    );
+  };
+
+  const getProposalBase = (p: Proposal) => {
+    const sub = Number(p.pricing?.subtotal) || 0;
+    const disc = Number(p.pricing?.discount) || 0;
+    return Math.max(0, sub - disc);
+  };
+
+  const getProposalVat = (p: Proposal) => {
+    if (isWithoutVatProposal(p)) return 0;
+    const base = getProposalBase(p);
+    const rate = Number(p.pricing?.vatRate) || 20;
+    return Math.round((base * rate) / 100);
+  };
+
+  const getProposalTotal = (p: Proposal) => {
+    if (p.pricing?.totalAmount) return Number(p.pricing.totalAmount);
+    return getProposalBase(p) + getProposalVat(p);
+  };
+
+  // Current Month Key (e.g. "2026-08")
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const currentMonthLabel = now.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+
+  // 1. ALL ACCEPTED PROPOSALS (Kabul Edilenler)
+  const acceptedProposals = proposals.filter((p) => p.status === 'onaylandi');
+  const totalAcceptedWithVat = acceptedProposals.reduce((sum, p) => sum + getProposalTotal(p), 0);
+  const totalAcceptedBase = acceptedProposals.reduce((sum, p) => sum + getProposalBase(p), 0);
+  const totalAcceptedVat = acceptedProposals.reduce((sum, p) => sum + getProposalVat(p), 0);
+
+  // 2. THIS MONTH ACCEPTED PROPOSALS (Bu Ay Kabul Edilenler)
+  const thisMonthAcceptedProposals = acceptedProposals.filter((p) => {
+    if (!p.createdAt) return false;
+    const d = new Date(p.createdAt);
+    if (isNaN(d.getTime())) return false;
+    const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return mKey === currentMonthKey;
+  });
+
+  const monthAcceptedWithVat = thisMonthAcceptedProposals.reduce((sum, p) => sum + getProposalTotal(p), 0);
+  const monthAcceptedBase = thisMonthAcceptedProposals.reduce((sum, p) => sum + getProposalBase(p), 0);
+
+  // 3. COLLECTIONS & RECEIVABLES (Sadece Kabul Edilen İşler Üzerinden Gerçek Alacak ve Tahsilat)
+  let totalAcceptedPaid = 0;
+  let totalAcceptedRemaining = 0; // KABUL EDİLENLERDEN BEKLEYEN ALACAK (GERÇEK ALACAK)
+  let monthAcceptedPaid = 0;
+  let monthAcceptedRemaining = 0;
   let fileReadyPendingPaymentCount = 0;
   let fileReadyPendingPaymentAmount = 0;
 
-  proposals.forEach((p) => {
+  acceptedProposals.forEach((p) => {
     const summary = getProposalPaymentSummary(p);
-    totalCollectedAmount += summary.totalPaid;
-    totalRemainingReceivable += summary.remaining;
-    if (summary.paymentStatus === 'dosya_bitti_odeme_bekliyor') {
-      fileReadyPendingPaymentCount += 1;
-      fileReadyPendingPaymentAmount += summary.remaining;
+    totalAcceptedPaid += summary.totalPaid;
+    totalAcceptedRemaining += summary.remaining;
+
+    // Check if this proposal belongs to current month
+    let isThisMonth = false;
+    if (p.createdAt) {
+      const d = new Date(p.createdAt);
+      if (!isNaN(d.getTime())) {
+        const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        isThisMonth = mKey === currentMonthKey;
+      }
+    }
+
+    if (isThisMonth) {
+      monthAcceptedPaid += summary.totalPaid;
+      monthAcceptedRemaining += summary.remaining;
+    }
+
+    if (summary.paymentStatus === 'dosya_bitti_odeme_bekliyor' || summary.fileCompleted) {
+      if (summary.remaining > 0) {
+        fileReadyPendingPaymentCount += 1;
+        fileReadyPendingPaymentAmount += summary.remaining;
+      }
     }
   });
+
+  // Active Display Numbers based on Period Mode
+  const activeAcceptedWithVat = timePeriodMode === 'this_month' ? monthAcceptedWithVat : totalAcceptedWithVat;
+  const activeAcceptedBase = timePeriodMode === 'this_month' ? monthAcceptedBase : totalAcceptedBase;
+  const activeAcceptedCount = timePeriodMode === 'this_month' ? thisMonthAcceptedProposals.length : acceptedProposals.length;
+  const activePaid = timePeriodMode === 'this_month' ? monthAcceptedPaid : totalAcceptedPaid;
+  const activeRemaining = timePeriodMode === 'this_month' ? monthAcceptedRemaining : totalAcceptedRemaining;
+  const activeRevenueDisplay = showNetWithoutVat ? activeAcceptedBase : activeAcceptedWithVat;
+  const collectionPercentage = activeAcceptedWithVat > 0 ? Math.round((activePaid / activeAcceptedWithVat) * 100) : 0;
+
+  // Potential Pipeline (Taslak & Görüşülen Teklifler)
+  const pipelineProposals = proposals.filter((p) => p.status === 'taslak' || p.status === 'teklif_verildi' || p.status === 'revize');
+  const pipelineTotalWithVat = pipelineProposals.reduce((sum, p) => sum + getProposalTotal(p), 0);
+  const pipelineTotalBase = pipelineProposals.reduce((sum, p) => sum + getProposalBase(p), 0);
 
   // Filter proposals
   const filtered = proposals.filter((p) => {
@@ -113,115 +198,239 @@ export const ProposalList: React.FC<ProposalListProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* Top Banner & Quick Payment & Proposal Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        {/* Total Proposals */}
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-slate-800 flex flex-col justify-between">
-          <div>
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-400">
-              TOPLAM TEKLİF
-            </span>
-            <div className="text-3xl font-black mt-1 text-white">{proposals.length}</div>
+      {/* Top Financial Control & View Switcher Bar */}
+      <div className="bg-slate-900 text-white p-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-md border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <div className="p-2 bg-amber-500 text-slate-950 rounded-xl font-black text-xs">
+            ₺
           </div>
+          <div>
+            <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+              <span>Finans & Tahsilat Göstergeleri</span>
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                Canlı Bakiye
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Bekleyen alacak sadece <strong>kabul edilen ({acceptedProposals.length}) işin</strong> kalan bakiyesini gösterir.
+            </div>
+          </div>
+        </div>
+
+        {/* Period & VAT Toggle Buttons */}
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+          {/* Period Toggle */}
+          <div className="bg-slate-800 p-1 rounded-xl flex items-center border border-slate-700 text-xs font-bold">
+            <button
+              onClick={() => setTimePeriodMode('all')}
+              className={`px-3 py-1 rounded-lg transition ${
+                timePeriodMode === 'all'
+                  ? 'bg-amber-500 text-slate-950 font-black shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Tüm Zamanlar
+            </button>
+            <button
+              onClick={() => setTimePeriodMode('this_month')}
+              className={`px-3 py-1 rounded-lg transition flex items-center gap-1 ${
+                timePeriodMode === 'this_month'
+                  ? 'bg-amber-500 text-slate-950 font-black shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Calendar className="w-3 h-3" />
+              <span>Bu Ay ({currentMonthLabel})</span>
+            </button>
+          </div>
+
+          {/* KDV Toggle Button */}
           <button
-            onClick={onNewProposal}
-            className="mt-3 w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow transition flex items-center justify-center gap-1.5"
+            onClick={() => setShowNetWithoutVat(!showNetWithoutVat)}
+            title={showNetWithoutVat ? 'KDV Dahil Gösterime Geç' : 'KDV Hariç Net Gösterime Geç'}
+            className={`px-3 py-1.5 rounded-xl text-xs font-black transition border flex items-center gap-1.5 cursor-pointer ${
+              showNetWithoutVat
+                ? 'bg-blue-600 border-blue-500 text-white shadow-sm'
+                : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+            }`}
           >
-            <PlusCircle className="w-4 h-4" />
-            Hızlı Teklif Ekle
+            <Percent className="w-3.5 h-3.5" />
+            <span>{showNetWithoutVat ? 'KDV Hariç (Net)' : 'KDV Dahil (Genel)'}</span>
           </button>
         </div>
+      </div>
 
-        {/* Collected Payments (Tahsil Edilen) */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700">
-              TAHSİL EDİLEN (KASA)
-            </span>
-            <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
-              <CheckCircle2 className="w-4 h-4" />
-            </span>
+      {/* 4 Main KPI Cards: KABUL EDİLEN CİRO, TAHSİL EDİLEN (KASA), BEKLEYEN ALACAK, DOSYA BİTTİ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        
+        {/* 1. KABUL EDİLEN CİRO (TOPLAM İŞ HACMİ) */}
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-slate-800 flex flex-col justify-between relative overflow-hidden">
+          <div className="h-1 bg-amber-400 absolute top-0 left-0 right-0" />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-400">
+                {timePeriodMode === 'this_month' ? 'BU AY KABUL EDİLEN CİRO' : 'KABUL EDİLEN TOPLAM CİRO'}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 text-[10px] font-black border border-amber-400/30">
+                {activeAcceptedCount} Onaylı İş
+              </span>
+            </div>
+            <div className="text-2xl sm:text-3xl font-black font-mono text-white mt-1">
+              ₺{activeRevenueDisplay.toLocaleString('tr-TR')}
+            </div>
+            <div className="text-[11px] text-slate-300 mt-1 flex items-center justify-between font-medium">
+              <span>{showNetWithoutVat ? 'KDV Hariç Net Bedel' : 'KDV Dahil Genel Toplam'}</span>
+              <span className="text-amber-300 font-bold text-[10.5px]">
+                {showNetWithoutVat ? `(KDV Dahil: ₺${activeAcceptedWithVat.toLocaleString('tr-TR')})` : `(Net: ₺${activeAcceptedBase.toLocaleString('tr-TR')})`}
+              </span>
+            </div>
           </div>
-          <div className="text-2xl font-black font-mono text-emerald-700 mt-1">
-            ₺{totalCollectedAmount.toLocaleString('tr-TR')}
+          
+          <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[10.5px] text-slate-400">
+            <span>Potansiyel Teklif Havuzu:</span>
+            <strong className="text-slate-200 font-mono">₺{(showNetWithoutVat ? pipelineTotalBase : pipelineTotalWithVat).toLocaleString('tr-TR')} ({pipelineProposals.length})</strong>
           </div>
-          <span className="text-[11px] text-slate-500 font-medium">Alınan peşinat ve ödemeler</span>
         </div>
 
-        {/* Pending Receivables (Kalan Alacak) */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-700">
-              BEKLEYEN ALACAK
-            </span>
-            <span className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
-              <Clock className="w-4 h-4" />
-            </span>
+        {/* 2. TAHSİL EDİLEN (KASA GİRİŞİ) */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between relative overflow-hidden">
+          <div className="h-1 bg-emerald-500 absolute top-0 left-0 right-0" />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700">
+                {timePeriodMode === 'this_month' ? 'BU AY TAHSİL EDİLEN (KASA)' : 'TAHSİL EDİLEN (KASA)'}
+              </span>
+              <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
+                <CheckCircle2 className="w-4 h-4" />
+              </span>
+            </div>
+            <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-700 mt-1">
+              ₺{activePaid.toLocaleString('tr-TR')}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between font-medium">
+              <span>Alınan peşinat ve ödemeler</span>
+              <span className="font-bold text-emerald-700 text-[10.5px]">
+                Tahsilat: %{collectionPercentage}
+              </span>
+            </div>
           </div>
-          <div className="text-2xl font-black font-mono text-slate-900 mt-1">
-            ₺{totalRemainingReceivable.toLocaleString('tr-TR')}
+
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10.5px] text-slate-500 font-medium">
+            <span>{timePeriodMode === 'this_month' ? 'Tüm Zamanlar Tahsilat:' : 'Bu Ay Tahsil Edilen:'}</span>
+            <strong className="text-slate-800 font-mono">
+              ₺{(timePeriodMode === 'this_month' ? totalAcceptedPaid : monthAcceptedPaid).toLocaleString('tr-TR')}
+            </strong>
           </div>
-          <span className="text-[11px] text-slate-500 font-medium">Teslim edilecek / kalan bakiyeler</span>
         </div>
 
-        {/* Dosya Bitti Ödeme Bekleyenler Alert Card */}
-        <div className={`p-4 sm:p-5 rounded-2xl shadow-sm border flex flex-col justify-between transition ${
+        {/* 3. BEKLEYEN ALACAK (KABUL EDİLİP TAHSİL EDİLEMEYEN) */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border-2 border-blue-200 flex flex-col justify-between relative overflow-hidden">
+          <div className="h-1 bg-blue-600 absolute top-0 left-0 right-0" />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-900">
+                BEKLEYEN ALACAK
+              </span>
+              <span className="p-1.5 rounded-lg bg-blue-50 text-blue-700">
+                <Clock className="w-4 h-4" />
+              </span>
+            </div>
+            <div className="text-2xl sm:text-3xl font-black font-mono text-blue-950 mt-1">
+              ₺{activeRemaining.toLocaleString('tr-TR')}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 font-medium">
+              Kabul edilen işlerin kalan tahsilat bakiyesi
+            </div>
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-blue-100 flex items-center justify-between text-[10.5px] text-blue-900 font-semibold">
+            <span>{timePeriodMode === 'this_month' ? 'Tüm Zamanlar Kalan Alacak:' : 'Bu Ay Kalan Alacak:'}</span>
+            <strong className="font-mono text-slate-900">
+              ₺{(timePeriodMode === 'this_month' ? totalAcceptedRemaining : monthAcceptedRemaining).toLocaleString('tr-TR')}
+            </strong>
+          </div>
+        </div>
+
+        {/* 4. DOSYA BİTTİ, ÖDEME BEKLİYOR ALERT CARD */}
+        <div className={`p-4 sm:p-5 rounded-2xl shadow-sm border flex flex-col justify-between transition relative overflow-hidden ${
           fileReadyPendingPaymentCount > 0 
             ? 'bg-amber-50/90 border-amber-300 text-amber-950 ring-1 ring-amber-400' 
             : 'bg-white border-slate-200 text-slate-900'
         }`}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-900 flex items-center gap-1">
-              <FolderCheck className="w-3.5 h-3.5 text-amber-600" />
-              DOSYA BİTTİ, ÖDEME BEKLİYOR
-            </span>
-            {fileReadyPendingPaymentCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black animate-pulse">
-                {fileReadyPendingPaymentCount} DOSYA
+          {fileReadyPendingPaymentCount > 0 && <div className="h-1 bg-amber-500 absolute top-0 left-0 right-0" />}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-900 flex items-center gap-1">
+                <FolderCheck className="w-3.5 h-3.5 text-amber-600" />
+                DOSYA BİTTİ, ÖDEME BEKLİYOR
               </span>
-            )}
+              {fileReadyPendingPaymentCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black animate-pulse">
+                  {fileReadyPendingPaymentCount} DOSYA
+                </span>
+              )}
+            </div>
+            <div className="text-2xl sm:text-3xl font-black font-mono text-amber-900 mt-1">
+              ₺{fileReadyPendingPaymentAmount.toLocaleString('tr-TR')}
+            </div>
+            <div className="text-[11px] text-amber-800 font-medium mt-1">
+              {fileReadyPendingPaymentCount > 0 ? 'Rapor/dosya hazır, son teslim ödemesi' : 'Bekleyen acil dosya yok'}
+            </div>
           </div>
-          <div className="text-2xl font-black font-mono text-amber-900 mt-1">
-            ₺{fileReadyPendingPaymentAmount.toLocaleString('tr-TR')}
+
+          <div className="mt-3 pt-2.5 border-t border-amber-200/80 flex items-center justify-between text-[10.5px] text-amber-900 font-bold">
+            <span>Toplam Teklif Sayısı:</span>
+            <span className="text-slate-800 font-black">{proposals.length} Teklif</span>
           </div>
-          <span className="text-[11px] text-amber-800 font-semibold">
-            {fileReadyPendingPaymentCount > 0 ? 'Rapor hazır, son ödeme bekleniyor' : 'Bekleyen dosya yok'}
-          </span>
         </div>
 
       </div>
 
       {/* Monthly Revenue Analytics Banner */}
       {onOpenAnalytics && (
-        <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-lg border border-emerald-800/60 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
+        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-950 text-white rounded-2xl p-4 sm:p-5 shadow-lg border border-emerald-800/50 flex flex-col lg:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 w-full lg:w-auto">
             <div className="p-3 bg-emerald-500/20 text-emerald-300 rounded-2xl border border-emerald-500/30 shrink-0">
               <BarChart3 className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
-                  AYLIK İŞ & GELİR RÖNTGENİ
+                  AYLIK GELİR & İŞ RÖNTGENİ
                 </span>
-                <span className="text-xs text-emerald-200 font-medium">3 İşlem Türüne Göre Ayrı Ayrı Analiz</span>
+                <span className="text-xs text-emerald-200 font-medium">Ana Para, KDV ve Tahsilat Dağılımı</span>
               </div>
-              <div className="text-sm sm:text-base font-bold text-white mt-1">
-                Kabul Edilen Toplam Ciro: <span className="font-black text-amber-300 font-mono text-base sm:text-lg">₺{totalApprovedRevenue.toLocaleString('tr-TR')}</span>
-                <span className="text-xs text-emerald-300 ml-2 font-normal">
-                  (Tahsilat: ₺{totalCollectedAmount.toLocaleString('tr-TR')})
-                </span>
+              <div className="text-xs sm:text-sm font-semibold text-slate-200 mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <div>
+                  Kabul Edilen Ciro: <span className="font-black text-white font-mono">₺{totalAcceptedWithVat.toLocaleString('tr-TR')}</span>
+                  <span className="text-[11px] text-slate-400 ml-1">(Net: ₺{totalAcceptedBase.toLocaleString('tr-TR')})</span>
+                </div>
+                <div className="text-emerald-300 font-bold">
+                  Tahsilat: <span className="font-mono">₺{totalAcceptedPaid.toLocaleString('tr-TR')}</span>
+                </div>
+                <div className="text-blue-300 font-bold">
+                  Bekleyen Alacak: <span className="font-mono">₺{totalAcceptedRemaining.toLocaleString('tr-TR')}</span>
+                </div>
               </div>
             </div>
           </div>
 
-          <button
-            onClick={onOpenAnalytics}
-            className="w-full sm:w-auto px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 shrink-0"
-          >
-            <BarChart3 className="w-4 h-4" />
-            Aylık Gelir ve İş Analizini Aç
-          </button>
+          <div className="flex items-center gap-2.5 w-full lg:w-auto justify-end">
+            <button
+              onClick={onNewProposal}
+              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700 shadow transition flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <PlusCircle className="w-4 h-4 text-amber-400" />
+              <span>Yeni Teklif</span>
+            </button>
+            <button
+              onClick={onOpenAnalytics}
+              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center gap-2 shrink-0 cursor-pointer"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Aylık Gelir ve İş Analizini Aç</span>
+            </button>
+          </div>
         </div>
       )}
 

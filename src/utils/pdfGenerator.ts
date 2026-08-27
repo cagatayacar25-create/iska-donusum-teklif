@@ -144,6 +144,14 @@ export async function exportProposalToPdf(elementId: string, filename: string): 
       return false;
     }
 
+    if (document.fonts?.ready) {
+      try {
+        await document.fonts.ready;
+      } catch {
+        // ignore font ready error
+      }
+    }
+
     const pageElements = Array.from(element.querySelectorAll<HTMLElement>('.pdf-page'));
 
     const pdf = new jsPDF({

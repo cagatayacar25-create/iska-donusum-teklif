@@ -2343,9 +2343,8 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                     Statik Güçlendirme Teklifi Standart Hükümleri:
                   </div>
                   <p>1. <strong>Ödeme Cetveli:</strong> İş başlangıcında %50, Avan proje tesliminde %50 olarak yapılacaktır.</p>
-                  <p>2. <strong>Vergi:</strong> Fiyatlarımıza KDV dahil değildir.</p>
-                  <p>3. <strong>Geçerlilik:</strong> Bu fiyat teklifinin geçerlilik süresi {formData.paymentTerms.validityDays || 15} takvim günüdür.</p>
-                  <p>4. <strong>Standart:</strong> Projeler 2018 TBDY standartlarına uygun olarak Kontrollü Hasar seviyesi hedeflenerek hazırlanacaktır.</p>
+                  <p>2. <strong>Geçerlilik:</strong> Bu fiyat teklifinin geçerlilik süresi {formData.paymentTerms.validityDays || 15} takvim günüdür.</p>
+                  <p>3. <strong>Standart:</strong> Projeler 2018 TBDY standartlarına uygun olarak Kontrollü Hasar seviyesi hedeflenerek hazırlanacaktır.</p>
                 </div>
               ) : null}
 
