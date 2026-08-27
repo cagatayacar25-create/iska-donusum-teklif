@@ -736,12 +736,9 @@ ${companyProfile.name}
                             <p>
                               <strong>3.</strong> Projeler <strong>2018 TBDY standartlarına uygun</strong> olarak <strong>Kontrollü Hasar</strong> seviyesi hedeflenerek hazırlanacaktır.
                             </p>
-                            <div className="pt-2 border-t border-slate-200 text-[9px] text-slate-700 italic space-y-1">
+                            <div className="pt-2 border-t border-slate-200 text-[9px] text-slate-700 italic">
                               <p>
                                 <strong>Not:</strong> Bu fiyat teklifinin geçerlilik süresi <strong>{proposal.paymentTerms.validityDays || 15} takvim günüdür</strong>. Bu sürenin aşılması durumunda teklifin tekrar revize edilmesi gerekmektedir.
-                              </p>
-                              <p className="not-italic">
-                                * Numune için gün belirlendiğinde <strong>%30</strong>, numune alındığı gün <strong>%30</strong>, resmî/belediye rapor onayında <strong>%40</strong> tahsil edilecektir.
                               </p>
                             </div>
                           </div>
