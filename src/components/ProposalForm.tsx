@@ -462,17 +462,20 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
       const vatAmount = (afterDiscount * vatRate) / 100;
       newPricing.totalAmount = Math.round(afterDiscount + vatAmount);
 
-      // Recalculate installments so payment conditions match the new total amount
-      const advRatio = prev.paymentTerms?.advanceRatio || (prev.type === 'statik_guclendirme' ? 50 : 30);
-      const updatedInstallments = generateDefaultInstallments(prev.type, newPricing.totalAmount, advRatio).map((newInst, idx) => {
-        const existingInst = prev.paymentTerms?.installments?.[idx];
-        return {
-          ...newInst,
-          isPaid: existingInst?.isPaid || false,
-          paidAt: existingInst?.paidAt,
-          paymentMethod: existingInst?.paymentMethod || 'havale_eft',
-        };
-      });
+      // Recalculate installments so payment conditions match the new total amount without wiping user percentages
+      let updatedInstallments: PaymentInstallment[];
+      if (prev.paymentTerms?.installments && prev.paymentTerms.installments.length > 0) {
+        updatedInstallments = prev.paymentTerms.installments.map((existingInst) => {
+          const pct = existingInst.percentage ?? 0;
+          return {
+            ...existingInst,
+            amount: Math.round(newPricing.totalAmount * (pct / 100)),
+          };
+        });
+      } else {
+        const advRatio = prev.paymentTerms?.advanceRatio || (prev.type === 'statik_guclendirme' ? 50 : 30);
+        updatedInstallments = generateDefaultInstallments(prev.type, newPricing.totalAmount, advRatio);
+      }
 
       // Sync scope item ry10 with kollukKuvvetiIncluded if it exists in scopeItems
       let updatedScopeItems = prev.scopeItems;
@@ -524,7 +527,15 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
         const vatAmount = (afterDiscount * vatRate) / 100;
         newPricing.totalAmount = Math.round(afterDiscount + vatAmount);
 
-        const newInst = generateDefaultInstallments(prev.type, newPricing.totalAmount, prev.paymentTerms?.advanceRatio || 30);
+        let newInst: PaymentInstallment[];
+        if (prev.paymentTerms?.installments && prev.paymentTerms.installments.length > 0) {
+          newInst = prev.paymentTerms.installments.map((existingInst) => ({
+            ...existingInst,
+            amount: Math.round(newPricing.totalAmount * ((existingInst.percentage ?? 0) / 100)),
+          }));
+        } else {
+          newInst = generateDefaultInstallments(prev.type, newPricing.totalAmount, prev.paymentTerms?.advanceRatio || 30);
+        }
 
         return {
           ...prev,
@@ -2466,14 +2477,16 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                     }
                   }
 
-                  const firstPct = newInst[0]?.percentage || formData.paymentTerms.advanceRatio || (formData.type === 'statik_guclendirme' ? 50 : 30);
+                  const firstPct = typeof newInst[0]?.percentage === 'number'
+                    ? newInst[0].percentage
+                    : (formData.paymentTerms.advanceRatio ?? (formData.type === 'statik_guclendirme' ? 50 : 30));
 
                   setFormData({
                     ...formData,
                     paymentTerms: {
                       ...formData.paymentTerms,
                       advanceRatio: firstPct,
-                      uponDeliveryRatio: 100 - firstPct,
+                      uponDeliveryRatio: Math.max(0, 100 - firstPct),
                       paymentStatus: newStatus,
                       installments: newInst,
                       totalPaidAmount: newPaid,
@@ -2488,12 +2501,20 @@ export const ProposalForm: React.FC<ProposalFormProps> = ({
                     if (field === 'percentage') {
                       const pct = Number(val) || 0;
                       const amt = Math.round(calculatedTotal * (pct / 100));
-                      return { ...inst, percentage: pct, amount: amt };
+                      let newName = inst.name;
+                      if (newName && / - %\d+\)/.test(newName)) {
+                        newName = newName.replace(/ - %\d+\)/, ` - %${pct})`);
+                      }
+                      return { ...inst, percentage: pct, amount: amt, name: newName };
                     }
                     if (field === 'amount') {
                       const amt = Number(val) || 0;
                       const pct = calculatedTotal > 0 ? Math.round((amt / calculatedTotal) * 100) : 0;
-                      return { ...inst, amount: amt, percentage: pct };
+                      let newName = inst.name;
+                      if (newName && / - %\d+\)/.test(newName)) {
+                        newName = newName.replace(/ - %\d+\)/, ` - %${pct})`);
+                      }
+                      return { ...inst, amount: amt, percentage: pct, name: newName };
                     }
                     if (field === 'isPaid') {
                       const isP = Boolean(val);

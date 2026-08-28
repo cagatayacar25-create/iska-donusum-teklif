@@ -208,21 +208,27 @@ export default function App() {
       const totalAmount = isWithoutVat ? subtotal : Math.round(subtotal * (1 + (found.pricing?.vatRate || 20) / 100));
       const advRatio = (found.paymentTerms?.advanceRatio || 50) / 100;
       
-      let newPaid = 0;
-      if (newPaymentStatus === 'tamami_odendi') {
-        newPaid = totalAmount;
-      } else if (newPaymentStatus === 'ilk_taksit_odendi' || newPaymentStatus === 'dosya_bitti_odeme_bekliyor') {
-        newPaid = Math.round(totalAmount * advRatio);
-      } else if (newPaymentStatus === 'ara_odeme_odendi') {
-        newPaid = Math.round(totalAmount * 0.75);
-      }
-
       const updatedInstallments = (found.paymentTerms?.installments || []).map((inst, idx) => {
         if (newPaymentStatus === 'tamami_odendi') return { ...inst, isPaid: true };
         if (newPaymentStatus === 'odeme_bekliyor') return { ...inst, isPaid: false };
-        if (idx === 0) return { ...inst, isPaid: true };
+        if (newPaymentStatus === 'ilk_taksit_odendi') return { ...inst, isPaid: idx === 0 };
+        if (newPaymentStatus === 'ara_odeme_odendi') return { ...inst, isPaid: idx <= 1 };
+        if (newPaymentStatus === 'dosya_bitti_odeme_bekliyor') return { ...inst, isPaid: idx === 0 };
         return inst;
       });
+
+      let newPaid = 0;
+      if (updatedInstallments.length > 0) {
+        newPaid = updatedInstallments.filter((i) => i.isPaid).reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+      } else {
+        if (newPaymentStatus === 'tamami_odendi') {
+          newPaid = totalAmount;
+        } else if (newPaymentStatus === 'ilk_taksit_odendi' || newPaymentStatus === 'dosya_bitti_odeme_bekliyor') {
+          newPaid = Math.round(totalAmount * advRatio);
+        } else if (newPaymentStatus === 'ara_odeme_odendi') {
+          newPaid = Math.round(totalAmount * 0.75);
+        }
+      }
 
       const updated: Proposal = {
         ...found,

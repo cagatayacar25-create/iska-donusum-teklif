@@ -64,7 +64,7 @@ export function sanitizeProposal(p: Proposal): Proposal {
     const kollukIncluded = Boolean(prop.pricing?.kollukKuvvetiIncluded);
     const kollukPrice = kollukIncluded ? Number(prop.pricing?.kollukKuvvetiPrice ?? 25000) : 0;
     const baseSubtotal = Math.round(unitPrice * buildingCount);
-    const subtotal = baseSubtotal + kollukPrice;
+    const subtotal = Number(prop.pricing?.subtotal) || (baseSubtotal + kollukPrice);
     const discount = Math.max(0, Number(prop.pricing?.discount) || 0);
     const afterDiscount = Math.max(0, subtotal - discount);
     const isWithoutVat = Boolean(
@@ -72,21 +72,33 @@ export function sanitizeProposal(p: Proposal): Proposal {
       prop.pricing?.invoiceType === 'faturasiz' || 
       prop.pricing?.vatRate === 0
     );
-    const vatRate = isWithoutVat ? 0 : (Number(prop.pricing?.vatRate) || 20);
+    const vatRate = isWithoutVat ? 0 : (Number(prop.pricing?.vatRate) ?? 20);
     const vatAmount = (afterDiscount * vatRate) / 100;
-    const totalAmount = isWithoutVat ? afterDiscount : Math.round(afterDiscount + vatAmount);
+    const totalAmount = Number(prop.pricing?.totalAmount) || (isWithoutVat ? afterDiscount : Math.round(afterDiscount + vatAmount));
 
-    const advanceRatio = prop.paymentTerms?.advanceRatio || 30;
-    const defaultInst = generateDefaultInstallments('riskli_yapi', totalAmount, advanceRatio);
-    const installments = defaultInst.map((inst, idx) => {
-      const old = prop.paymentTerms?.installments?.[idx];
-      return {
-        ...inst,
-        isPaid: old?.isPaid || false,
-        paidAt: old?.paidAt,
-        paymentMethod: old?.paymentMethod || 'havale_eft',
-      };
-    });
+    // Installments: Kullanıcının girdiği özel oranlar (ör. %37), tutarlar ve açıklamalar KESİNLİKLE korunmalıdır!
+    let installments: PaymentInstallment[] = [];
+    if (prop.paymentTerms?.installments && Array.isArray(prop.paymentTerms.installments) && prop.paymentTerms.installments.length > 0) {
+      installments = prop.paymentTerms.installments.map((inst, idx) => ({
+        id: inst.id || `inst_${idx + 1}`,
+        name: inst.name || `${idx + 1}. Taksit`,
+        percentage: typeof inst.percentage === 'number' ? inst.percentage : (Number(inst.percentage) || 0),
+        amount: typeof inst.amount === 'number' ? inst.amount : (Number(inst.amount) || 0),
+        isPaid: Boolean(inst.isPaid),
+        paidAt: inst.paidAt,
+        paymentMethod: inst.paymentMethod || 'havale_eft',
+        notes: inst.notes,
+      }));
+    } else {
+      const advanceRatio = prop.paymentTerms?.advanceRatio || 30;
+      installments = generateDefaultInstallments('riskli_yapi', totalAmount, advanceRatio);
+    }
+
+    const calculatedPaid = installments
+      .filter((i) => i.isPaid)
+      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const calculatedRemaining = Math.max(0, totalAmount - calculatedPaid);
+    const firstPct = installments[0]?.percentage ?? prop.paymentTerms?.advanceRatio ?? 30;
 
     prop.property = {
       ...prop.property,
@@ -104,6 +116,38 @@ export function sanitizeProposal(p: Proposal): Proposal {
     };
     prop.paymentTerms = {
       ...prop.paymentTerms,
+      advanceRatio: firstPct,
+      uponDeliveryRatio: 100 - firstPct,
+      totalPaidAmount: calculatedPaid,
+      remainingAmount: calculatedRemaining,
+      installments,
+    };
+  } else if (prop.paymentTerms?.installments && Array.isArray(prop.paymentTerms.installments) && prop.paymentTerms.installments.length > 0) {
+    // Diğer tüm teklif tipleri için de mevcut taksitleri normalize et ve koru
+    const grandTotal = Number(prop.pricing?.totalAmount) || 0;
+    const installments = prop.paymentTerms.installments.map((inst, idx) => ({
+      id: inst.id || `inst_${idx + 1}`,
+      name: inst.name || `${idx + 1}. Taksit`,
+      percentage: typeof inst.percentage === 'number' ? inst.percentage : (Number(inst.percentage) || 0),
+      amount: typeof inst.amount === 'number' ? inst.amount : (Number(inst.amount) || 0),
+      isPaid: Boolean(inst.isPaid),
+      paidAt: inst.paidAt,
+      paymentMethod: inst.paymentMethod || 'havale_eft',
+      notes: inst.notes,
+    }));
+
+    const calculatedPaid = installments
+      .filter((i) => i.isPaid)
+      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const calculatedRemaining = Math.max(0, grandTotal - calculatedPaid);
+    const firstPct = installments[0]?.percentage ?? prop.paymentTerms?.advanceRatio ?? 50;
+
+    prop.paymentTerms = {
+      ...prop.paymentTerms,
+      advanceRatio: firstPct,
+      uponDeliveryRatio: 100 - firstPct,
+      totalPaidAmount: calculatedPaid,
+      remainingAmount: calculatedRemaining,
       installments,
     };
   }
@@ -233,14 +277,30 @@ export function getProposalPaymentSummary(proposal: Proposal): {
   const grandTotal = isWithoutVat ? base : Math.round(base * (1 + vatRate / 100));
 
   let totalPaid = 0;
-  if (proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0) {
-    totalPaid = proposal.paymentTerms.installments
+  const currentStatus = proposal.paymentTerms?.paymentStatus || 'odeme_bekliyor';
+  const hasInst = proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0;
+
+  if (hasInst) {
+    const paidSum = proposal.paymentTerms.installments
       .filter((inst) => inst.isPaid)
       .reduce((sum, inst) => sum + (Number(inst.amount) || 0), 0);
-  } else if (typeof proposal.paymentTerms?.totalPaidAmount === 'number') {
+    
+    if (paidSum > 0) {
+      totalPaid = paidSum;
+    } else if (currentStatus === 'tamami_odendi') {
+      totalPaid = grandTotal;
+    } else if (currentStatus === 'ilk_taksit_odendi' || currentStatus === 'dosya_bitti_odeme_bekliyor') {
+      totalPaid = Number(proposal.paymentTerms.installments[0]?.amount) || Math.round(grandTotal * ((proposal.paymentTerms.advanceRatio || 30) / 100));
+    } else if (currentStatus === 'ara_odeme_odendi') {
+      const inst1 = Number(proposal.paymentTerms.installments[0]?.amount) || 0;
+      const inst2 = Number(proposal.paymentTerms.installments[1]?.amount) || 0;
+      totalPaid = inst1 + inst2 > 0 ? inst1 + inst2 : Math.round(grandTotal * 0.75);
+    } else if (typeof proposal.paymentTerms?.totalPaidAmount === 'number') {
+      totalPaid = proposal.paymentTerms.totalPaidAmount;
+    }
+  } else if (typeof proposal.paymentTerms?.totalPaidAmount === 'number' && proposal.paymentTerms.totalPaidAmount > 0) {
     totalPaid = proposal.paymentTerms.totalPaidAmount;
   } else {
-    const currentStatus = proposal.paymentTerms?.paymentStatus || 'odeme_bekliyor';
     if (currentStatus === 'tamami_odendi') {
       totalPaid = grandTotal;
     } else if (currentStatus === 'ilk_taksit_odendi' || currentStatus === 'dosya_bitti_odeme_bekliyor') {

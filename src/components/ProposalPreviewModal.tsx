@@ -728,7 +728,25 @@ ${companyProfile.name}
                           {/* Sol Kutu - Koşullar */}
                           <div className="col-span-7 bg-slate-50/70 border border-slate-300 rounded-xl p-3.5 space-y-2.5 text-[9.5px] text-slate-900 leading-normal">
                             <p>
-                              <strong>1. Ödeme Koşulları:</strong> 1. Taksit (İş Başlangıcı / Peşinat - <strong>%{proposal.paymentTerms.advanceRatio || 50}</strong>) (<strong>%{proposal.paymentTerms.advanceRatio || 50} - ₺{(Math.round((proposal.pricing.subtotal - proposal.pricing.discount) * ((proposal.paymentTerms.advanceRatio || 50) / 100))).toLocaleString('tr-TR')}</strong>), 2. Taksit (Avan / Detay Proje Teslimi - <strong>%{proposal.paymentTerms.uponDeliveryRatio || 50}</strong>) (<strong>%{proposal.paymentTerms.uponDeliveryRatio || 50} - ₺{(Math.round((proposal.pricing.subtotal - proposal.pricing.discount) * ((proposal.paymentTerms.uponDeliveryRatio || 50) / 100))).toLocaleString('tr-TR')}</strong>)
+                              <strong>1. Ödeme Koşulları:</strong>{' '}
+                              {proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0 ? (
+                                proposal.paymentTerms.installments.map((inst, idx) => {
+                                  const cleanName = (inst.name || `${idx + 1}. Taksit`).replace(/\s*\(\s*%\d+\s*\)/g, '').replace(/\s*-\s*%\d+\s*/g, '').trim();
+                                  const instAmt = typeof inst.amount === 'number' && inst.amount > 0 
+                                    ? inst.amount 
+                                    : Math.round((proposal.pricing.subtotal - proposal.pricing.discount) * ((inst.percentage || 0) / 100));
+                                  return (
+                                    <span key={inst.id || idx}>
+                                      {idx > 0 ? ', ' : ''}
+                                      {cleanName} (<strong>%{inst.percentage} - ₺{instAmt.toLocaleString('tr-TR')}</strong>)
+                                    </span>
+                                  );
+                                })
+                              ) : (
+                                <>
+                                  1. Taksit (İş Başlangıcı / Peşinat - <strong>%{proposal.paymentTerms.advanceRatio || 50}</strong>) (<strong>%{proposal.paymentTerms.advanceRatio || 50} - ₺{(Math.round((proposal.pricing.subtotal - proposal.pricing.discount) * ((proposal.paymentTerms.advanceRatio || 50) / 100))).toLocaleString('tr-TR')}</strong>), 2. Taksit (Avan / Detay Proje Teslimi - <strong>%{proposal.paymentTerms.uponDeliveryRatio || 50}</strong>) (<strong>%{proposal.paymentTerms.uponDeliveryRatio || 50} - ₺{(Math.round((proposal.pricing.subtotal - proposal.pricing.discount) * ((proposal.paymentTerms.uponDeliveryRatio || 50) / 100))).toLocaleString('tr-TR')}</strong>)
+                                </>
+                              )}
                             </p>
                             <p>
                               <strong>2. İşin Teslim Süresi:</strong> Ödeme cetvelinde ve sözleşmede belirtildiği şekildedir (<strong>{proposal.paymentTerms.completionWorkDays || 30} iş günü</strong>).
@@ -1049,7 +1067,23 @@ ${companyProfile.name}
                         <p className="flex items-start gap-2">
                           <span className="font-bold text-slate-950">•</span>
                           <span>
-                            <strong>Ödeme Şekli:</strong> Numune alım günü <strong>%30</strong>, analiz tamamlandığında <strong>%40</strong>, nihai rapor tesliminde kalan <strong>%30</strong> ödenecektir.
+                            <strong>Ödeme Şekli:</strong>{' '}
+                            {proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0 ? (
+                              proposal.paymentTerms.installments.map((inst, idx) => {
+                                const cleanName = (inst.name || `${idx + 1}. Taksit`).replace(/\s*\(\s*%\d+\s*\)/g, '').replace(/\s*-\s*%\d+\s*/g, '').trim();
+                                const instAmt = typeof inst.amount === 'number' && inst.amount > 0 
+                                  ? inst.amount 
+                                  : Math.round(proposal.pricing.totalAmount * ((inst.percentage || 0) / 100));
+                                return (
+                                  <span key={inst.id || idx}>
+                                    {idx > 0 ? ', ' : ''}
+                                    {cleanName} (<strong>%{inst.percentage}</strong> - ₺{instAmt.toLocaleString('tr-TR')})
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <>Numune alım günü <strong>%30</strong>, analiz tamamlandığında <strong>%40</strong>, nihai rapor tesliminde kalan <strong>%30</strong> ödenecektir.</>
+                            )}
                           </span>
                         </p>
                       </div>
@@ -1213,7 +1247,23 @@ ${companyProfile.name}
                         <div className="flex items-start gap-2">
                           <span className="text-slate-950 font-bold">•</span>
                           <span>
-                            <strong>Ödeme şekli;</strong> Numune için gün belirlendiğinde ödemenin <strong>%30'u</strong>, Numune alındığı gün ödemenin <strong>%30'u</strong>, belediye raporu onayladığında kalan <strong>%40'ı</strong> alınacaktır.
+                            <strong>Ödeme şekli;</strong>{' '}
+                            {proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0 ? (
+                              proposal.paymentTerms.installments.map((inst, idx) => {
+                                const cleanName = (inst.name || `${idx + 1}. Taksit`).replace(/\s*\(\s*%\d+\s*\)/g, '').replace(/\s*-\s*%\d+\s*/g, '').trim();
+                                const instAmt = typeof inst.amount === 'number' && inst.amount > 0 
+                                  ? inst.amount 
+                                  : Math.round(proposal.pricing.totalAmount * ((inst.percentage || 0) / 100));
+                                return (
+                                  <span key={inst.id || idx}>
+                                    {idx > 0 ? ', ' : ''}
+                                    {cleanName} (<strong>%{inst.percentage}</strong> - ₺{instAmt.toLocaleString('tr-TR')})
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <>Numune için gün belirlendiğinde ödemenin <strong>%30'u</strong>, Numune alındığı gün ödemenin <strong>%30'u</strong>, belediye raporu onayladığında kalan <strong>%40'ı</strong> alınacaktır.</>
+                            )}
                           </span>
                         </div>
                       </div>
@@ -1271,7 +1321,7 @@ ${companyProfile.name}
                       {/* Kırmızı ve Siyah Notlar */}
                       <div className="space-y-1.5 text-[10.5px] leading-relaxed pt-1">
                         <p className="text-red-600 font-bold italic">
-                          Not1: Numune için gün belirlendikten 1 hafta içerisinde %30' luk ön ödeme yapılmaz ise program günü iptal edilecektir.
+                          Not1: Numune için gün belirlendikten 1 hafta içerisinde %{proposal.paymentTerms?.advanceRatio || proposal.paymentTerms?.installments?.[0]?.percentage || 30}'luk ön ödeme yapılmaz ise program günü iptal edilecektir.
                         </p>
                         <p className="text-red-600 font-bold italic">
                           Not2: Bu Teklif geçerlilik süresi {proposal.paymentTerms.validityDays || 15} gün olup onaylandığında taraflar için sözleşme hükmündedir.
@@ -1337,7 +1387,7 @@ ${companyProfile.name}
                         <div>
                           <p className="font-bold text-slate-950">5. Ödeme ve Cayma Şartları:</p>
                           <p className="mt-0.5">
-                            Teklifte belirtilen ödeme planı geçerlidir. İşveren tarafından iş başlangıcında ödenecek %30 tutarındaki ön ödeme (kapora), işin planlaması, saha hazırlıkları ve personel tahsisi amacıyla alınmaktadır.
+                            Teklifte belirtilen ödeme planı geçerlidir. İşveren tarafından iş başlangıcında ödenecek %{proposal.paymentTerms?.advanceRatio || proposal.paymentTerms?.installments?.[0]?.percentage || 30} tutarındaki ön ödeme (kapora), işin planlaması, saha hazırlıkları ve personel tahsisi amacıyla alınmaktadır.
                           </p>
                           <p className="mt-0.5">
                             İşveren’in, sözleşmenin yürürlüğe girmesinden sonra tek taraflı olarak işten vazgeçmesi durumunda bu tutar iade edilmeyecektir. Bu tutar, Yüklenici’nin ön hazırlık ve organizasyon giderlerinin karşılığı olup, taraflarca cayma bedeli niteliğinde olduğu kabul edilmiştir.
@@ -1603,12 +1653,18 @@ ${companyProfile.name}
                           <li>
                             <strong>Ödeme Şekli:</strong>{' '}
                             {proposal.paymentTerms?.installments && proposal.paymentTerms.installments.length > 0 ? (
-                              proposal.paymentTerms.installments.map((inst, idx) => (
-                                <span key={inst.id || idx}>
-                                  {idx > 0 ? ', ' : ''}
-                                  {inst.name || `${idx + 1}. Taksit`} (<strong>%{inst.percentage}</strong> - ₺{(Math.round(proposal.pricing.totalAmount * (inst.percentage / 100)) || inst.amount || 0).toLocaleString('tr-TR')})
-                                </span>
-                              ))
+                              proposal.paymentTerms.installments.map((inst, idx) => {
+                                const cleanName = (inst.name || `${idx + 1}. Taksit`).replace(/\s*\(\s*%\d+\s*\)/g, '').replace(/\s*-\s*%\d+\s*/g, '').trim();
+                                const instAmt = typeof inst.amount === 'number' && inst.amount > 0 
+                                  ? inst.amount 
+                                  : Math.round(proposal.pricing.totalAmount * ((inst.percentage || 0) / 100));
+                                return (
+                                  <span key={inst.id || idx}>
+                                    {idx > 0 ? ', ' : ''}
+                                    {cleanName} (<strong>%{inst.percentage}</strong> - ₺{instAmt.toLocaleString('tr-TR')})
+                                  </span>
+                                );
+                              })
                             ) : (
                               <>Numune gününde <strong>%30</strong>, numune alındığında <strong>%30</strong>, belediye onayladığında <strong>%40</strong> ödenecektir.</>
                             )}
